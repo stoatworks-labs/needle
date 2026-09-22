@@ -158,7 +158,15 @@ Not verified, and not pretended:
 
 - **Never loaded into Resolume**, and not installed into it. Everything above is
   the offline harness driving the real plugin class in a headless GL context.
-  How 31 controls in five groups present in the inspector is untested.
+  How 31 controls across four groups present in Resolume's inspector is
+  untested.
+- **Three of the quoted figures came from background knowledge and were not
+  checked against a document**: the PPM's "2 dB below steady for a 5 ms burst"
+  (used in place of the looser "about 80 %" — they are the same requirement,
+  since 10^(−2/20) is 79.43 %), the BBC PPM's seven marks at four decibels, and
+  the 6U5's 100-degree shadow angle. `AGENTS.md` separates those from the
+  figures that were supplied, and each names the single constant to change if it
+  turns out to be wrong. Only the first can affect a ballistic claim.
 - **Windows is CI-only and the CI has never run.**
 - **The host's audio buffer is uncalibrated and its bin law is unmeasured** — see
   above. `Bin Law` exists because the fleet disagrees with itself about it.
