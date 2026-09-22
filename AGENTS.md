@@ -263,6 +263,29 @@ is arranged so that a different rasteriser cannot change the answer:
   probe. Three of the five were found the way graticule found its plate: by a
   probe reading the wrong thing.
 
+Every assertion in `--pixels`, and which of the above it rests on:
+
+| Assertion | Class |
+|---|---|
+| Both corners are the background colour | flat interior, ±1 |
+| The dial's face is the face colour | flat interior, ±1, probed 1.6 arc radii from the pivot and a fifth of the half-height inside the corner |
+| The pointer is at least 1.21 px of half-width | the derived precondition, asserted before it is used |
+| The pointer's centreline is the pointer colour | flat interior on a line, ±1 |
+| The mirror of that angle is the face colour | flat interior, ±1 |
+| 0 VU moves the pointer right by more than 0.05 rad | ordering; the real move is 0.667 rad |
+| ...and the pointer is drawn at the new angle too | flat interior, ±1 |
+| With Background off the face is still opaque and unchanged | flat interior ±1, plus `alpha == 255` exactly |
+| ...and the corner is `alpha == 0` | exact integer |
+| −7.5 dB lights seven of ten steps | integer equality against the LM3915 law, cross-checked by `--steps` |
+| Every lit step differs from a known-dark one | exact 3-byte comparison, no colour rule transcribed |
+| Every unlit step matches it | exact 3-byte comparison |
+| A burst leaves a hold bar; the column has fallen; the bar is not the unlit colour | orderings and exact comparisons |
+| The eye's shadow is part open at 20 dB down | a sanity bracket, not a measurement — the measurement is `--eye` |
+| The lit sector and the shadow are different colours | exact 3-byte comparison of two flat interiors |
+| Past the overload the shadow is shut and the wings overlap | exact equality and an ordering, on CPU state |
+| ...and the bottom of the target is lit | exact 3-byte comparison |
+| Stereo draws two units, side by side, both probes on the raster, both faces exact | orderings, bounds and flat interiors ±1 |
+
 Three bugs in `--pixels` were found and fixed during that pass, and all three
 were the test being wrong: an expected step count off by one (the law says seven
 at −7.5 dB, not eight), the hold bar sitting over the segment a probe wanted,

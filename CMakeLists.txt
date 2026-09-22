@@ -160,8 +160,9 @@ install(TARGETS NeedleSource
 #
 # macOS only, because the pixel checks stand up a CGL context directly. The
 # ballistics checks do not: every physical claim this plugin makes is a claim
-# about the CPU engine, so --ballistics, --ppm, --steps, --eye, --prime and
-# --rate open no context at all and run on a machine with no GPU.
+# about the CPU engine, so --ballistics, --ppm, --steps, --eye, --prime,
+# --rate and --friction open no context at all and run on a machine with no
+# GPU.
 #
 # That split is deliberate and it is the main lesson this repo carries. A check
 # that reads rendered pixels is a check that can fail for reasons that have
