@@ -1,0 +1,94 @@
+name: ci
+
+# Both platforms on every push and pull request, so a Dependabot bump has a
+# status check to gate on and a GLEW-shaped break -- which macOS is
+# structurally blind to, because macOS never links GLEW -- is caught before a
+# tag. There is no Linux job: the CMakeLists branches on APPLE and WIN32.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        # arm64 only, unlike the release build's universal arm64;x86_64 -- the
+        # second slice doubles the build for no extra signal, because a source
+        # break is not architecture-specific.
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DNEEDLE_BUILD_TOOLS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: The physics
+        # Every one of these runs with NO GL context at all -- they measure the
+        # CPU engine against the standards it is solved from. That is what makes
+        # them meaningful on a runner with no GPU, and it is the lesson of the
+        # last round: four of six checks in that batch were calibrated to one
+        # Mac's rasteriser and failed here, and in all four cases the test was
+        # wrong rather than the plugin.
+        run: |
+          for t in ballistics ppm steps eye prime rate defaults names font; do
+            ./build/ndtest "--$t"
+          done
+
+      - name: Pixels
+        # The one check that needs a rasteriser. It asserts flat interiors at
+        # coordinates the plugin itself produced, at two rasters, so it should
+        # hold on the runner's software GL -- but it is the check most likely to
+        # need a second look if this job ever goes red.
+        run: ./build/ndtest --pixels
+
+      - name: Controls
+        # At 160x90, because the runner has no GPU and the question is only
+        # whether a control changed ANY subpixel. graticule's first run of this
+        # step at 320x180 was still going at twenty minutes -- software
+        # rasterisation, a hundred-odd renders, and an eight-wide pool on a
+        # three-core runner. Two at a time and a quarter of the pixels.
+        timeout-minutes: 25
+        run: python3 tools/sweep.py --size 160x90 --jobs 2
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: needle-macos-arm64
+          path: build/*.bundle
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        # The toolchain path MUST stay double-quoted: a `run:` step on Windows
+        # is PowerShell, and unquoted this expands to nothing.
+        run: >
+          cmake -B build -A x64
+          -DCMAKE_BUILD_TYPE=Release
+          -DNEEDLE_BUILD_TOOLS=OFF
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: needle-windows-x86_64
+          path: build/Release/*.dll
+          if-no-files-found: error
