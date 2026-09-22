@@ -20,7 +20,7 @@
 static CFFGLPluginInfo PluginInfo(
 	PluginFactory< needle::NeedlePlugin >,                   // Create method
 	"ND01",                                                  // Plugin unique ID of maximum length 4
-	"Needle",                                                // Plugin name
+	"SW Needle",                                             // Plugin name
 	2,                                                       // API major version number
 	1,                                                       // API minor version number
 	0,                                                       // Plugin major version number

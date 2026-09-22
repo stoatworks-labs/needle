@@ -239,7 +239,7 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$BUNDLE" ]; then
 		# And the identity a host reads, which nothing else here checks.
 		probe=$("$OXBOW" probe "$BUNDLE" 2>&1)
 		case "$probe" in *"id:          ND01"*) pass "id is ND01" ;; *) fail "wrong FFGL id" ;; esac
-		case "$probe" in *"name:        Needle"*) pass "name is Needle" ;; *) fail "wrong plugin name" ;; esac
+		case "$probe" in *"name:        SW Needle"*) pass "name is SW Needle" ;; *) fail "wrong plugin name" ;; esac
 		case "$probe" in *"type:        source"*) pass "type is source" ;; *) fail "wrong plugin type" ;; esac
 	else
 		printf '   skipped: oxbow not built at %s\n' "$OXBOW"
