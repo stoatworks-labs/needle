@@ -146,11 +146,13 @@ Verified, by measurement on this machine (Apple Silicon, macOS 26.4):
 - **The picture.** Pixel-exact draws at 640×360 and 1920×1080; all **31**
   controls change it; the bundle is universal, exports `plugMain`, signs, and
   passes `oxbow selftest` as `ND01` / Needle / source.
-- **Cost**, `ndtest --bench`: about **0.01 ms/frame at 720p, 0.012 at 1080p and
-  0.026 at 4K** — under a fifth of one per cent of a 60 fps frame, at 4K. The
-  work is small enough that run-to-run spread reaches a factor of two, so the
-  bench quotes its fastest pass of five with the spread printed beside it; a
-  single average there would be measuring the machine's mood.
+- **Cost**, `ndtest --bench`: **under 0.03 ms/frame at every raster from 720p to
+  4K**, which is under a fifth of one per cent of a 60 fps frame. That is as
+  precise as the measurement honestly gets: one pass is so cheap that the number
+  is dominated by scheduling rather than by the shader, and back-to-back passes
+  at 4K have spanned 0.020 to 0.077 ms on an otherwise idle machine. The bench
+  quotes its fastest pass of five with the spread printed beside it; a single
+  average there would be measuring the machine's mood.
 
 Not verified, and not pretended:
 
