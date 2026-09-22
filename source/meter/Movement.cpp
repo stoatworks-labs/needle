@@ -28,7 +28,7 @@ inline double Pole( double h, double tau )
 }
 } // namespace
 
-void Movement::Step( double h, double u, double zeta, double omegaN )
+void Movement::Step( double h, double u, double zeta, double omegaN, double friction )
 {
 	if( h <= 0.0 )
 		return;
@@ -40,6 +40,26 @@ void Movement::Step( double h, double u, double zeta, double omegaN )
 
 	x += h / 6.0 * ( k1.dx + 2.0 * k2.dx + 2.0 * k3.dx + k4.dx );
 	v += h / 6.0 * ( k1.dv + 2.0 * k2.dv + 2.0 * k3.dv + k4.dv );
+
+	if( friction <= 0.0 )
+		return;
+
+	// Dry friction, semi-implicitly. The decrement this step could take is
+	// friction.h; if the pointer is going slower than that it would reverse,
+	// which a friction cannot make it do -- so it either stops dead, or the
+	// spring is strong enough to drag it on through.
+	const double decrement = friction * h;
+	if( std::fabs( v ) <= decrement )
+	{
+		if( std::fabs( omegaN * omegaN * ( u - x ) ) <= friction )
+			v = 0.0;// stuck, short of the target, and staying there
+		else
+			v -= std::copysign( decrement, v );
+	}
+	else
+	{
+		v -= std::copysign( decrement, v );
+	}
 }
 
 void Follower::Step( double h, double u, double riseTau, double fallTau )
@@ -67,12 +87,12 @@ void Hold::Step( double h, double db_, double holdSeconds, double decayDbPerSeco
 }
 
 void Eye::Step( double h, double u, double zeta, double omegaN, double persistenceTau,
-				double warmTau )
+				double warmTau, double friction )
 {
 	if( h <= 0.0 )
 		return;
 
-	movement.Step( h, u, zeta, omegaN );
+	movement.Step( h, u, zeta, omegaN, friction );
 
 	// Phosphor persistence is a lag on what is SEEN, not on what the tube is
 	// doing: the target has already been excited, the glow is what is left of

@@ -289,6 +289,7 @@ Settings NeedlePlugin::CurrentSettings() const
 	s.holdSeconds          = PeakHoldSeconds( mParams[ PT_PEAK_HOLD ] );
 	s.holdDecayDbPerSecond = HoldDecayDbPerSecond( mParams[ PT_HOLD_DECAY ] );
 	s.persistenceSeconds   = PersistenceSeconds( mParams[ PT_PERSISTENCE ] );
+	s.wear                 = mParams[ PT_WEAR ];
 	return s;
 }
 

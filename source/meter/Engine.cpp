@@ -128,6 +128,7 @@ Resolved Resolve( const Settings& s )
 	r.holdDecayDbPerSecond = std::max( 0.0, s.holdDecayDbPerSecond );
 	r.persistenceTau       = std::max( 0.0, s.persistenceSeconds );
 	r.warmTau              = kWarmTau;
+	r.frictionDeadBand     = kMaxDeadBand * std::clamp( s.wear, 0.0, 1.0 );
 
 	return r;
 }
@@ -178,10 +179,18 @@ void Engine::StepAll( double h, const double* amplitudeRatio, int channels )
 		{
 			const double u     = DeflectionFor( vuScale, a );
 			const double omega = ( u >= c.vu.x ) ? resolved_.vuOmegaUp : resolved_.vuOmegaDown;
-			c.vu.Step( h, u, resolved_.vuZeta, omega );
+			// The friction is expressed as a dead band and converted here, so
+			// the band is the same fraction of full scale at any ballistics.
+			c.vu.Step( h, u, resolved_.vuZeta, omega,
+					   resolved_.frictionDeadBand * omega * omega );
 		}
 
 		// The PPM and the bargraph share one detector, in the AMPLITUDE domain,
+		// and it is a detector rather than a movement: IEC 60268-10 specifies
+		// the *indication*, not the mechanism, so all the ballistics live here
+		// and the pointer follows without a movement of its own. Wear therefore
+		// does not stick a PPM -- there is no pivot in this model to stick.
+		//
 		// because that is where the standard's fall-back figure lives. The two
 		// differ only in the scale they are read against, which is the honest
 		// account of the hardware too: an LED meter and a moving-coil PPM off
@@ -195,7 +204,7 @@ void Engine::StepAll( double h, const double* amplitudeRatio, int channels )
 			const double omega = ( u >= c.eye.movement.x ) ? resolved_.eyeOmegaUp
 														   : resolved_.eyeOmegaDown;
 			c.eye.Step( h, u, resolved_.eyeZeta, omega, resolved_.persistenceTau,
-						resolved_.warmTau );
+						resolved_.warmTau, resolved_.frictionDeadBand * omega * omega );
 		}
 
 		// The hold bar follows the detector, in dB on the bargraph's scale.

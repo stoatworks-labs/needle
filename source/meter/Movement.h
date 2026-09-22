@@ -49,7 +49,26 @@ struct Movement
 	}
 
 	/// Advance by `h` seconds toward drive `u`.
-	void Step( double h, double u, double zeta, double omegaN );
+	///
+	/// `friction` is a **dry** friction, in deflection units per second
+	/// squared, opposing whichever way the pointer is going. It is what a worn
+	/// pivot does, and it behaves nothing like more damping: viscous damping
+	/// slows a movement down and still lets it arrive, while dry friction stops
+	/// it *short*, anywhere inside a dead band of `friction / omegaN^2` either
+	/// side of the target, and leaves it there. A worn meter therefore reads
+	/// differently depending on which direction it came from, which is exactly
+	/// the complaint people have about one.
+	///
+	/// It is applied after the Runge-Kutta step rather than inside the
+	/// derivative, because `sign( v )` is discontinuous and an RK4 stage that
+	/// straddles the discontinuity is meaningless. The pointer sticks when the
+	/// step's own velocity decrement would reverse it AND the spring cannot
+	/// break it out.
+	///
+	/// A friction of zero leaves the step bit-identical to the frictionless
+	/// one, which `ndtest --friction` asserts: the headline ANSI C16.5 claim is
+	/// made at Wear 0 and must not be reachable from here.
+	void Step( double h, double u, double zeta, double omegaN, double friction = 0.0 );
 };
 
 /**
@@ -140,7 +159,7 @@ struct Eye
 	}
 
 	void Step( double h, double u, double zeta, double omegaN, double persistenceTau,
-			   double warmTau );
+			   double warmTau, double friction = 0.0 );
 
 	/// Shadow half-sector angle in degrees: `kEyeOpenDegrees` at rest, zero at
 	/// and beyond full deflection.

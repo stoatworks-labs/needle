@@ -79,6 +79,12 @@ struct Settings
 	                                   ///< nobody specifies either of these
 	double holdDecayDbPerSecond = 12.0;
 	double persistenceSeconds   = 0.06;///< the eye's phosphor
+
+	/// Wear, 0..1. It is one control doing two jobs, because a worn meter has
+	/// both: the face is dirty and the LEDs and the phosphor are dim -- which
+	/// the shader does -- and the pivot is stiff, which is this. See
+	/// `kMaxDeadBand`.
+	double wear = 0.0;
 };
 
 /// The ballistic constants those settings imply. One function, used by the
@@ -101,7 +107,21 @@ struct Resolved
 	double holdDecayDbPerSecond = 0.0;
 	double persistenceTau       = 0.0;
 	double warmTau              = 0.0;
+
+	/// Half the width of the band a worn pointer can come to rest in, in
+	/// deflection units. The friction acceleration handed to `Movement::Step`
+	/// is this times omegaN^2, so the band is the same fraction of full scale
+	/// whatever the ballistics are -- which is what makes it a statement about
+	/// the meter rather than about the settings.
+	double frictionDeadBand = 0.0;
 };
+
+/// A fully worn pointer rests within 3 % of full scale of where it should be.
+///
+/// Not a standard -- a standard meter is not worn out. 3 % is about a quarter
+/// of the width of the 0 VU mark on a printed face, which is roughly the point
+/// at which somebody stops trusting the meter and starts tapping it.
+inline constexpr double kMaxDeadBand = 0.03;
 
 Resolved Resolve( const Settings& settings );
 

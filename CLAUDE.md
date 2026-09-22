@@ -26,6 +26,8 @@ mappings or a tolerance in the harness.
   - `./build/ndtest --eye` — the shadow is monotonic and shuts at the overload
   - `./build/ndtest --prime` — frame one advances nothing; a clip trigger is not deaf
   - `./build/ndtest --rate` — the same answer at 24, 30, 50, 60 and 144 fps
+  - `./build/ndtest --friction` — a worn pivot stops the pointer short, and differently
+    depending on which way it came
   - `./build/ndtest --defaults` — Free agrees with Standard at the shipped defaults
   - `./build/ndtest --names` — no name over 16 characters, none duplicated
 - Pixels (the only check that needs a rasteriser): `./build/ndtest --pixels`
@@ -49,6 +51,12 @@ mappings or a tolerance in the harness.
 - **The engine takes the host's clock, not a delta, and frame one takes no
   steps.** A clip triggered at t = 40 s would otherwise integrate 192,000 steps
   before anybody saw a frame. A zero interval must advance *nothing*.
+- **Wear is one control doing two jobs.** The shader's half is dirt and dim
+  phosphor; the engine's half is dry friction in the pivot, which stops the
+  pointer *short* rather than slowing it down, and leaves it somewhere different
+  depending on which way it came. At Wear 0 the movement is bit-identical to the
+  frictionless one, and `--friction` asserts that — the ANSI claim is made
+  there.
 - **The CPU computes every pixel coordinate**; the shader only decides coverage.
   That is what lets `--pixels` probe coordinates the plugin itself produced.
 - **`quiet()` in the harness is graticule's burn-in plate.** Lamp, Glass, Wear,

@@ -54,6 +54,12 @@ ten rungs.
   choose — because nobody standardised that one, and the plugin says so.
 - **The magic eye's wings overlap at overload**, which is the thing anyone who
   has used one actually watches for.
+- **Wear stops the pointer short rather than slowing it down.** A worn pivot is
+  dry friction, not more damping, and the two behave nothing alike: a damped
+  movement still arrives, a dry one stops somewhere inside a dead band and stays
+  there — at a different place depending on which way it came. That is why
+  people tap a tired meter, and at Wear 1 this one rests 2.0 % of full scale
+  short, both ways.
 
 ### The four instruments
 
@@ -79,6 +85,9 @@ from cold, phosphor persistence, and a target you can wear out.
   and no mass on a spring does that. Peak Hold and Hold Decay stay live on both
   settings, because no standard specifies them.
 - **Look** — Face and Needle colour, Scale Style, Lamp, Glass, Wear, Persistence.
+  **Wear** is the only one of those that is not purely cosmetic: as well as
+  dirtying the glass and dimming the phosphor it puts dry friction in the pivot.
+  At Wear 0, which is the default, the movement is bit-identical to a clean one.
 - **Layout** — Size, Position, Rotation, Background, Mix.
 
 Every ballistic default is the value at which Free agrees with Standard, so
@@ -130,6 +139,10 @@ Verified, by measurement on this machine (Apple Silicon, macOS 26.4):
   at zero.
 - **Frame rate.** Half a second of the same signal reads **0.712908590** at 24,
   30, 50, 60 and 144 fps, with a spread of exactly zero.
+- **A worn pivot.** At Wear 1 the pointer stops dead **2.0 % of full scale**
+  short of its target, inside the 3 % dead band the friction implies, and at a
+  different place depending on which way it came. At Wear 0 it is bit-identical
+  to a frictionless movement at every one of 9,600 steps.
 - **The picture.** Pixel-exact draws at 640×360 and 1920×1080; all **31**
   controls change it; the bundle is universal, exports `plugMain`, signs, and
   passes `oxbow selftest` as `ND01` / Needle / source.
@@ -174,7 +187,7 @@ line.
 
 ## Building and testing
 
-The offline harness drives the real plugin class. Eight of its ten check groups
+The offline harness drives the real plugin class. Nine of its eleven check groups
 open **no GL context at all**, because the claims they make are claims about a
 differential equation and a rasteriser has no opinion about those:
 
@@ -184,6 +197,7 @@ differential equation and a rasteriser has no opinion about those:
     ./build/ndtest --eye            # the shadow, across a 60 dB sweep
     ./build/ndtest --prime          # frame one, and a clip trigger at t = 40 s
     ./build/ndtest --rate           # 24, 30, 50, 60 and 144 fps agree
+    ./build/ndtest --friction       # a worn pivot, and what it does not touch
     ./build/ndtest --pixels         # and the one check that reads a rasteriser
     ./build/ndtest --bench          # 720p through 4K
     ./build/ndtest --out /tmp/f.png --size 1920x1080 --level -18 --set "Type=1"

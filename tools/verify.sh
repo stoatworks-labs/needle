@@ -160,7 +160,7 @@ fi
 # no opinion about ANSI C16.5.
 #---------------------------------------------------------------------------
 step "physics (no GL)"
-for t in ballistics ppm steps eye prime rate defaults names font; do
+for t in ballistics ppm steps eye prime rate friction defaults names font; do
 	log="/tmp/needle-$t.log"
 	if "$BUILD/ndtest" "--$t" >"$log" 2>&1; then
 		pass "ndtest --$t"

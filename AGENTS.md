@@ -12,7 +12,7 @@ Built 2026-09-22. Every check in `tools/verify.sh` passes on macOS (Apple
 Silicon, macOS 26.4, Metal-backed GL 4.1): the ballistics against ANSI C16.5,
 the fall-back against IEC 60268-10 type II, the LM3915 ladder recovered by
 bisection, the magic eye's shadow, frame-one priming, frame-rate independence,
-the defaults, the names, the font, the pixel checks at two rasters, the
+the dead band a worn pivot leaves, the defaults, the names, the font, the pixel checks at two rasters, the
 dead-control sweep, registration, lipo, plist, ad-hoc codesign and oxbow.
 
 **It has never been loaded into Resolume, and it has not been installed into
@@ -181,9 +181,9 @@ listed with the reasoning for its tolerance, and the question asked of each is
 the same: *could this pass here and fail on a GPU-less runner, or at a different
 size?*
 
-**The structural answer, first.** Eight of the ten check groups open **no GL
+**The structural answer, first.** Nine of the eleven check groups open **no GL
 context at all** — `--ballistics`, `--ppm`, `--steps`, `--eye`, `--prime`,
-`--rate`, `--defaults`, `--names` and `--font` drive `source/meter/` and the
+`--rate`, `--friction`, `--defaults`, `--names` and `--font` drive `source/meter/` and the
 parameter list directly. They cannot depend on a rasteriser or a raster because
 neither exists while they run. That is the single most important decision in the
 harness and it is why `verify.sh` groups them under "physics (no GL)".
@@ -211,6 +211,10 @@ harness and it is why `verify.sh` groups them under "physics (no GL)".
 | Sixty frames integrate one second | one engine step (208 µs) | The whole-step accumulator guarantees the residual is under one step. |
 | Two clock origins agree | one engine step (208 µs) | **The second check that was wrong first.** It asked for 1e-9 s, which is asking floating point to be exact: `40.0 + n/60.0` is simply not the same sequence of doubles as `n/60.0`, and the carried residual can cross a step boundary a frame earlier in one run. At most one step can separate them. Measured 2.5 µs. |
 | The frame-path crossing is 300 ms | ±12 ms | The measurement is sampled on the host's 16.7 ms frame grid, so its resolution is a frame; 12 ms is inside one and still fails a movement out by a whole frame. The ±5 ms claim is made by `--ballistics`, where it can be. Measured 300.24 ms. |
+| A worn pointer comes to a dead stop | exact equality on the velocity | It either sticks or it does not; there is nothing to round. |
+| ...inside the dead band the friction implies | `deadBand × (1 + 1e-12)` | Not a fitted number: the step's own stopping condition *is* `|ωn²(u − x)| ≤ friction`, which is `|u − x| ≤ deadBand`, so a pointer that has stopped satisfies it by construction. The 1e-12 is a double-arithmetic allowance on a comparison against the same quantity. Measured 0.0201 against a band of 0.03, from both directions. |
+| ...short of the target, and at a different place each way | orderings | The signature of dry friction as against damping: a damped movement arrives, a dry one stops. Measured 0.0402 apart. |
+| Wear 0 is bit-identical to no friction | exact equality, every step for two seconds | The headline ANSI C16.5 claim is made at Wear 0, so this is the check that stops the friction path reaching it. Not a tolerance: `==` on both state variables at every one of 9,600 steps. |
 | Five frame rates agree | `2 × maxSlope × 1/rate`, computed at run time | Nothing is hard-coded: the harness measures the movement's steepest slope from its own trajectory and multiplies by one step, which is the most two frame rates can differ by. Measured spread exactly zero against an allowance of 2.4e-3. |
 | Free agrees with Standard at the defaults | 1e-4 relative | The controls are floats (~7 significant digits) and the rise map amplifies relative error by `ln 100 = 4.6`, so the floor is ~5e-7. 1e-4 is two hundred times that and still far tighter than the gap between any two values anybody would confuse. |
 | Reference, trim, hold time, hold decay | 1e-4 / 1e-3 absolute | Exact linear maps of exactly-representable constants; the tolerance is a float-rounding allowance. |
@@ -283,6 +287,10 @@ across.
   clang reports "must use 'struct' tag" at four unrelated lines. The struct is
   `Models` now.
 - **Asserting `== 0.0` on an asymptote.** See the eye, above.
+- **`sign(v)` inside an RK4 stage is meaningless.** Dry friction is
+  discontinuous at zero velocity, so it is applied after the step rather than in
+  the derivative, semi-implicitly: if the step's own velocity decrement would
+  reverse the pointer, it either stops dead or the spring drags it through.
 - **Asserting that two floating-point clock origins agree bit for bit.** See
   `--prime`, above.
 - **A dial's proportions are not free either.** The first version put the pivot
@@ -314,6 +322,20 @@ across.
   pretending the result is still a VU.
 - **The bargraph shares the PPM's detector.** An LED meter and a moving-coil PPM
   off the same rectifier differ in the display, not in the detector.
+- **The PPM has no movement of its own**, only a detector: IEC 60268-10
+  specifies the *indication*, not the mechanism, so all its ballistics live in
+  the follower and the pointer simply follows. One consequence is that Wear does
+  not stick a PPM — there is no pivot in this model to stick. A real BBC PPM
+  does have one, and modelling it would mean a second-order stage after the
+  detector with constants nobody publishes.
+- **Wear is one control doing two jobs.** The shader's half is dirt on the glass
+  and a dim phosphor; the engine's half is dry friction in the pivot, which is
+  a different animal from damping — it stops the pointer *short*, anywhere in a
+  dead band of `friction/ωn²`, and leaves it somewhere different depending on
+  which way it came. The band is expressed as a fraction of full scale (3 % at
+  Wear 1) and converted to an acceleration per movement, so it means the same
+  thing whatever the ballistics are. At Wear 0 — the default — it is bit-identical
+  to no friction, and `--friction` asserts that rather than assuming it.
 - **The magic eye borrows the VU's movement on Standard.** Nothing specifies an
   eye; the VU's is at least a published pair of numbers.
 - **The eye's fluorescence is a fixed tube green** and `Face` colours the bezel,

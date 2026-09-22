@@ -12,6 +12,8 @@
 	    --eye         the shadow is monotonic and shuts at the overload
 	    --prime       frame one advances nothing, and a clip trigger is not deaf
 	    --rate        the same answer at 24, 30, 50, 60 and 144 fps
+	    --friction    a worn pivot stops the pointer short, and differently
+	                  depending on which way it came
 	    --defaults    Free agrees with Standard at the shipped defaults
 	    --names       no parameter name over FFGL's 16 characters
 	    --font        print every glyph
@@ -849,6 +851,76 @@ int runPrime()
 }
 
 //---------------------------------------------------------------------------
+// --friction
+//---------------------------------------------------------------------------
+int runFriction()
+{
+	std::printf( "a worn pivot\n\n" );
+
+	Settings settings;
+	settings.wear    = 1.0;
+	const Resolved r = Resolve( settings );
+	const double   h = 1.0 / kEngineRate;
+	const double   band = r.frictionDeadBand;
+	const double   f    = band * r.vuOmegaUp * r.vuOmegaUp;
+
+	std::printf( "  dead band %s of full scale, friction %s units/s^2\n\n",
+				 F( band, 6 ).c_str(), F( f, 4 ).c_str() );
+
+	// Drive to the same target from below and from above, ten seconds each --
+	// far longer than any settling time, so whatever is left is stuck and not
+	// merely slow.
+	const double target = 0.5;
+	auto restAt = [ & ]( double from ) {
+		Movement m;
+		m.x = from;
+		for( long i = 0; i < static_cast< long >( 10.0 * kEngineRate ); ++i )
+			m.Step( h, target, r.vuZeta, r.vuOmegaUp, f );
+		return m;
+	};
+
+	const Movement below = restAt( 0.0 );
+	const Movement above = restAt( 1.0 );
+
+	std::printf( "  from below, rests at %s  (error %s)\n", F( below.x, 9 ).c_str(),
+				 F( below.x - target, 9 ).c_str() );
+	std::printf( "  from above, rests at %s  (error %s)\n\n", F( above.x, 9 ).c_str(),
+				 F( above.x - target, 9 ).c_str() );
+
+	Check( below.v == 0.0 && above.v == 0.0, "the pointer comes to a dead stop, both ways" );
+	// The stopping condition IS the dead band -- the step only zeroes the
+	// velocity when |omega^2 (u - x)| <= friction, which is |u - x| <= band --
+	// so this needs no tolerance beyond double arithmetic.
+	Check( std::fabs( below.x - target ) <= band * ( 1.0 + 1e-12 ) &&
+			   std::fabs( above.x - target ) <= band * ( 1.0 + 1e-12 ),
+		   "and inside the dead band the friction implies, either way" );
+	Check( std::fabs( below.x - target ) > 0.0 && std::fabs( above.x - target ) > 0.0,
+		   "short of the target, which is what dry friction does and damping does not" );
+	Check( below.x != above.x,
+		   "and at a different place depending on which way it came -- the reason people "
+		   "tap a worn meter (" + F( std::fabs( above.x - below.x ), 9 ) + " apart)" );
+
+	// Wear 0 must be bit-identical to no friction at all: the headline ANSI
+	// C16.5 claim is made there and must not be reachable from this code path.
+	Settings clean;
+	const Resolved rc = Resolve( clean );
+	Check( rc.frictionDeadBand == 0.0, "Wear 0 resolves to no friction at all" );
+
+	Movement a, b;
+	bool identical = true;
+	for( long i = 0; i < static_cast< long >( 2.0 * kEngineRate ); ++i )
+	{
+		a.Step( h, 1.0, rc.vuZeta, rc.vuOmegaUp );
+		b.Step( h, 1.0, rc.vuZeta, rc.vuOmegaUp, rc.frictionDeadBand );
+		identical = identical && a.x == b.x && a.v == b.v;
+	}
+	Check( identical, "and the movement is then bit-identical to the frictionless one" );
+
+	std::printf( "\n  %s\n", failures == 0 ? "PASS" : "FAIL" );
+	return failures == 0 ? 0 : 1;
+}
+
+//---------------------------------------------------------------------------
 // --rate
 //---------------------------------------------------------------------------
 int runRate()
@@ -1477,6 +1549,8 @@ int main( int argc, char** argv )
 			return runPrime();
 		if( arg == "--rate" )
 			return runRate();
+		if( arg == "--friction" )
+			return runFriction();
 		if( arg == "--defaults" )
 			return runDefaults();
 		if( arg == "--names" )
@@ -1517,7 +1591,8 @@ int main( int argc, char** argv )
 
 	std::printf(
 		"usage: ndtest --ballistics | --ppm | --steps | --eye | --prime | --rate\n"
-		"              --defaults | --names | --list | --font | --pixels | --bench\n"
+		"              --friction | --defaults | --names | --list | --font\n"
+		"              --pixels | --bench\n"
 		"       ndtest --out f.png [--size WxH] [--frames N] [--level dBFS]\n"
 		"              [--burst MS] [--set Name=value ...]\n" );
 	return 2;
