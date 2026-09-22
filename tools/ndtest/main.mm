@@ -347,7 +347,6 @@ struct Instance
 		if( plugin.InitGL( &vp ) != FF_SUCCESS )
 			std::printf( "  InitGL FAILED\n" );
 	}
-	Instance() = default;
 	~Instance() { plugin.DeInitGL(); }
 
 	void set( unsigned int id, float v ) { plugin.SetFloatParameter( id, v ); }
@@ -633,6 +632,31 @@ int runSteps()
 	Check( std::fabs( threshold[ 0 ] + standards::kBargraphStepDb *
 										   ( standards::kBargraphSteps - 1 ) ) < 1e-3,
 		   "so ten steps span 27 dB, bottom step at " + F( threshold[ 0 ], 3 ) + " dB" );
+
+	// The two scale maps are inverses, on every scale.
+	//
+	// They are used in opposite directions and in different files: the engine
+	// turns a level into a deflection, and the layout turns a printed mark's
+	// decibels into a place on the arc. A disagreement between them would leave
+	// the pointer right and every number on the face wrong -- which is the one
+	// way a meter can be broken and still look plausible.
+	//
+	// The round trip is a pow and a log10 in double, so its error is a few ulp
+	// of a number near one; 1e-12 is three orders above that.
+	bool inverse = true;
+	double worstRoundTrip = 0.0;
+	for( int ty = 0; ty < kMeterTypeCount; ++ty )
+	{
+		const Scale sc = ScaleFor( static_cast< MeterType >( ty ) );
+		for( double d = 0.0; d <= 1.0 + 1e-9; d += 0.125 )
+		{
+			const double back = DeflectionFor( sc, AmplitudeForDeflection( sc, d ) );
+			worstRoundTrip    = std::max( worstRoundTrip, std::fabs( back - d ) );
+		}
+	}
+	inverse = worstRoundTrip < 1e-12;
+	Check( inverse, "every scale's level-to-deflection and deflection-to-level maps are "
+					"inverses (worst " + F( worstRoundTrip, 15 ) + ")" );
 
 	std::printf( "\n  %s\n", failures == 0 ? "PASS" : "FAIL" );
 	return failures == 0 ? 0 : 1;
