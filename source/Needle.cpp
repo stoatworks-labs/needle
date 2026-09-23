@@ -131,8 +131,9 @@ NeedlePlugin::NeedlePlugin()
 	group( PT_TYPE, PT_STANDARD, "Meter" );
 
 	// -- Ballistics ------------------------------------------------------------
-	// Every default here is the value at which Free agrees with Standard, so
-	// the switch itself changes nothing until something else is moved.
+	// Every default here is the value at which Free agrees with Standard for
+	// the quantity it is named after (Rise and Overshoot: the VU; Fall: the
+	// PPM). Not a no-op for the VU's fall or the PPM's rise -- see Controls.h.
 	standard( PT_RISE, "Rise", kRiseDefault );
 	standard( PT_FALL, "Fall", kFallDefault );
 	standard( PT_OVERSHOOT, "Overshoot", kOvershootDefault );

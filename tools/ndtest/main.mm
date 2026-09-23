@@ -1000,8 +1000,10 @@ int runDefaults()
 
 	Check( s.standard, "Standard is on out of the box" );
 
-	// Every Free default is the value at which Free agrees with Standard, so
-	// flipping the switch alone changes nothing. The controls are floats with
+	// Every Free default is the value at which Free agrees with Standard for
+	// the quantity it is named after: the VU's damping and natural frequency,
+	// and the PPM's fall-back. Not the VU's fall or the PPM's rise -- one Rise
+	// and one Fall cannot be both meters, see Controls.h. The controls are floats with
 	// about seven significant digits and the rise map amplifies a relative
 	// error by ln(100) = 4.6, so the honest floor here is around 5e-7; 1e-4 is
 	// two hundred times that and still far tighter than the gap between any two

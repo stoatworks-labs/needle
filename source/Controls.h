@@ -30,10 +30,12 @@
 	## Where the defaults come from
 
 	Every default in the Ballistics group is the value that makes Free agree
-	with Standard. That is not decoration: an operator who flips the switch to
-	look at what it does should see nothing move until they move something, so
-	that the *next* thing they change is unambiguously what changed the picture.
-	`ndtest --defaults` asserts it.
+	with Standard for the quantity it is named after: Rise and Overshoot give
+	the VU's standard movement, Fall the PPM's standard fall-back. `ndtest
+	--defaults` asserts exactly those three. It is NOT a promise that flipping
+	the switch changes nothing: one Rise and one Fall cannot be a VU and a PPM at
+	once, so in Free the VU falls over the PPM's 2.8 s and the PPM rises over
+	the VU's 300 ms. Found writing the user guide, 2026-09-23.
 
 	## Order is load-bearing
 

@@ -90,9 +90,14 @@ from cold, phosphor persistence, and a target you can wear out.
   At Wear 0, which is the default, the movement is bit-identical to a clean one.
 - **Layout** — Size, Position, Rotation, Background, Mix.
 
-Every ballistic default is the value at which Free agrees with Standard, so
-flipping the switch alone changes nothing and the *next* thing you move is
-unambiguously what changed the picture.
+Every ballistic default is the value at which Free agrees with Standard for
+the quantity it is named after: Rise and Overshoot give the VU's standard
+movement, and Fall gives the PPM's standard fall-back (`ndtest --defaults`).
+One Rise and one Fall cannot be both meters at once, though, so flipping
+Standard off at the defaults is **not** a no-op everywhere: in Free the VU (and
+the magic eye) falls over the PPM's 2.8 s instead of its own 300 ms, and the PPM
+rises over the VU's 300 ms instead of its own few milliseconds. The switch
+alone leaves the VU's rise and the PPM's fall exactly where they were.
 
 ## What it reads, and what it cannot
 
