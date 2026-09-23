@@ -23,6 +23,40 @@
 
 	    --out f.png [--size WxH] [--frames N] [--level dBFS] [--burst ms]
 	                [--set "Name=value" ...]
+	    --pipe        raw RGBA frames on stdout, for the video pipeline
+
+	## --pipe
+
+	The fleet's frame format -- astable's `attest`, rosette's `rztest` -- so
+	one filming script can drive any of the FFGL plugins. needle is a
+	**source**: it declares no inputs and reads nothing, so there is no stdin
+	side. Frames are written until `--frames` is reached, or until the reader
+	closes the pipe if no count was asked for (or, with `--spectrum`, until the
+	spectrum runs out).
+
+	    ndtest --pipe --width 1920 --height 1080 --fps 30 [--script cues.txt] \
+	           [--spectrum spectrum.txt] \
+	      | ffmpeg -f rawvideo -pix_fmt rgba -s 1920x1080 -r 30 -i - out.mov
+
+	`--script` is a plain text file of `frame  Parameter Name  value` lines --
+	`frame  Name=value` is accepted too -- held before the first key and after
+	the last, and linearly interpolated between. An OPTION parameter (Type,
+	Count, Scale Style) is read by rounding, so key it one frame apart to cut.
+	A name that is not a parameter is refused rather than ignored, and so are
+	the Audio buffer and the About block, which are not values to automate.
+
+	`--spectrum` is macroblock's format: one line per video frame, 64 numbers,
+	`#` for comments. Each line is written into the Audio buffer through
+	`SetParamElementValue`, the same call a host makes, so what moves the
+	pointer is the plugin's own `LevelFromSpectrum` and its own engine. Held at
+	the last line if the render outlives it. Without it the buffer carries the
+	constant `--level`, as `--out` does.
+
+	Time is the frame counter, never a wall clock: frame n is `SetTime( n /
+	fps )`. `--fps` is therefore not cosmetic -- it is the clock the ballistics
+	integrate on -- and must match the rate the frames are encoded at.
+
+	This is harness-only. It adds nothing to the plugin and changes no check.
 
 	## The one decision that shapes this file
 
@@ -84,9 +118,15 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <csignal>
 #include <cstring>
+#include <fstream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
+
+#include <unistd.h>
 
 #include "Font.h"
 #include "Needle.h"
@@ -1529,12 +1569,313 @@ int runOut( const std::string& path, int w, int h, int frames, double level, dou
 	return 0;
 }
 
+//---------------------------------------------------------------------------
+// --pipe: raw frames out, a cue sheet and a spectrum in. See the file header.
+//---------------------------------------------------------------------------
+using Track = std::vector< std::pair< int, float > >;
+
+/// One `frame  Parameter Name  value` per line, or `frame  Name=value`. `#`
+/// starts a comment. The fleet's format, astable's parser.
+std::map< std::string, Track > loadScript( const std::string& path, std::string& error )
+{
+	std::map< std::string, Track > tracks;
+	std::ifstream                  file( path );
+	if( !file )
+	{
+		error = "cannot open " + path;
+		return tracks;
+	}
+
+	std::string line;
+	int         lineNumber = 0;
+	while( std::getline( file, line ) )
+	{
+		++lineNumber;
+		const size_t hash = line.find( '#' );
+		if( hash != std::string::npos )
+			line.erase( hash );
+		std::istringstream in( line );
+
+		int frame = 0;
+		if( !( in >> frame ) )
+			continue;
+
+		// The name is everything up to the last token, because parameter
+		// names have spaces in them ("Reference Level") and a value never does.
+		std::vector< std::string > words;
+		std::string                word;
+		while( in >> word )
+			words.push_back( word );
+
+		const std::string where = path + ":" + std::to_string( lineNumber ) +
+								  ": expected `frame Parameter Name value`";
+		if( words.empty() )
+		{
+			error = where;
+			return {};
+		}
+
+		std::string  name;
+		float        value  = 0.0f;
+		const size_t equals = words.back().find( '=' );
+		if( words.size() == 1 || equals != std::string::npos )
+		{
+			if( equals == std::string::npos )
+			{
+				error = where;
+				return {};
+			}
+			value = std::strtof( words.back().substr( equals + 1 ).c_str(), nullptr );
+			words.back().erase( equals );
+			for( const std::string& part : words )
+				if( !part.empty() )
+					name += name.empty() ? part : " " + part;
+		}
+		else
+		{
+			value = std::strtof( words.back().c_str(), nullptr );
+			words.pop_back();
+			for( const std::string& part : words )
+				name += name.empty() ? part : " " + part;
+		}
+
+		if( name.empty() )
+		{
+			error = where;
+			return {};
+		}
+		tracks[ name ].emplace_back( frame, value );
+	}
+
+	for( auto& entry : tracks )
+		std::sort( entry.second.begin(), entry.second.end() );
+	return tracks;
+}
+
+float valueAt( const Track& track, int frame )
+{
+	if( track.empty() )
+		return 0.0f;
+	if( frame <= track.front().first )
+		return track.front().second;
+	if( frame >= track.back().first )
+		return track.back().second;
+
+	for( size_t i = 1; i < track.size(); ++i )
+	{
+		if( frame <= track[ i ].first )
+		{
+			const auto& a    = track[ i - 1 ];
+			const auto& b    = track[ i ];
+			const float span = static_cast< float >( b.first - a.first );
+			const float t    = span > 0.0f ? ( static_cast< float >( frame - a.first ) / span ) : 1.0f;
+			return a.second + ( b.second - a.second ) * t;
+		}
+	}
+	return track.back().second;
+}
+
+/// One row of `audio::kBins` numbers per line; `#` starts a comment. A row
+/// with the wrong count is refused, because a short row silently padded with
+/// zeros would read as a quieter signal than the one analysed.
+std::vector< std::vector< float > > loadSpectrum( const std::string& path, std::string& error )
+{
+	std::vector< std::vector< float > > rows;
+	std::ifstream                       file( path );
+	if( !file )
+	{
+		error = "cannot open " + path;
+		return rows;
+	}
+	std::string line;
+	int         lineNumber = 0;
+	while( std::getline( file, line ) )
+	{
+		++lineNumber;
+		const size_t hash = line.find( '#' );
+		if( hash != std::string::npos )
+			line.erase( hash );
+		std::istringstream   in( line );
+		std::vector< float > row;
+		float                v = 0.0f;
+		while( in >> v )
+			row.push_back( v );
+		if( row.empty() )
+			continue;
+		if( static_cast< int >( row.size() ) != audio::kBins )
+		{
+			error = path + ":" + std::to_string( lineNumber ) + ": " + std::to_string( row.size() ) +
+					" bins, expected " + std::to_string( audio::kBins );
+			return {};
+		}
+		rows.push_back( std::move( row ) );
+	}
+	return rows;
+}
+
+struct PipeOptions
+{
+	int         width  = 1920;
+	int         height = 1080;
+	int         frames = 0;///< 0: until the reader hangs up, or the spectrum ends
+	double      fps    = 60.0;
+	double      level  = -18.0;
+	std::string scriptPath;
+	std::string spectrumPath;
+	std::vector< std::pair< std::string, std::string > > sets;
+};
+
+int runPipe( const PipeOptions& o )
+{
+	// A reader that stops early would otherwise kill this process with
+	// SIGPIPE before the plugin is shut down. Ignored, so the write fails and
+	// the loop ends the ordinary way.
+	std::signal( SIGPIPE, SIG_IGN );
+
+	if( o.width <= 0 || o.height <= 0 || !( o.fps > 0.0 ) )
+	{
+		std::fprintf( stderr, "ndtest: --pipe needs a positive size and --fps\n" );
+		return 1;
+	}
+
+	std::vector< std::vector< float > > spectrum;
+	if( !o.spectrumPath.empty() )
+	{
+		std::string error;
+		spectrum = loadSpectrum( o.spectrumPath, error );
+		if( !error.empty() || spectrum.empty() )
+		{
+			std::fprintf( stderr, "ndtest: %s\n", error.empty() ? "empty spectrum" : error.c_str() );
+			return 1;
+		}
+		std::fprintf( stderr, "ndtest: %zu frames of spectrum\n", spectrum.size() );
+	}
+
+	Host host;
+	if( !host.Open() )
+		return 1;
+	Target t;
+	t.Create( o.width, o.height );
+	int status = 0;
+	{
+		Instance i( o.width, o.height );
+
+		// Names to ids, once. The Audio buffer and the About block are not
+		// automatable values -- an About button that "moved" would open a
+		// browser -- so they are refused along with names that do not exist.
+		std::map< std::string, unsigned int > byName;
+		for( unsigned int id = 0; id < PT_AUDIO; ++id )
+			if( const char* name = i.plugin.GetParamName( id ) )
+				byName[ name ] = id;
+
+		for( const auto& kv : o.sets )
+		{
+			const auto found = byName.find( kv.first );
+			if( found == byName.end() )
+			{
+				std::fprintf( stderr, "ndtest: no parameter named '%s'\n", kv.first.c_str() );
+				status = 1;
+				break;
+			}
+			i.set( found->second, static_cast< float >( std::atof( kv.second.c_str() ) ) );
+		}
+
+		std::map< unsigned int, Track > automation;
+		if( status == 0 && !o.scriptPath.empty() )
+		{
+			std::string error;
+			const auto  tracks = loadScript( o.scriptPath, error );
+			if( !error.empty() )
+			{
+				std::fprintf( stderr, "ndtest: %s\n", error.c_str() );
+				status = 1;
+			}
+			for( const auto& entry : tracks )
+			{
+				if( status != 0 )
+					break;
+				const auto found = byName.find( entry.first );
+				if( found == byName.end() )
+				{
+					std::fprintf( stderr,
+								  "ndtest: the script names \"%s\", which is not an automatable "
+								  "parameter (try --list)\n",
+								  entry.first.c_str() );
+					status = 1;
+					break;
+				}
+				automation[ found->second ] = entry.second;
+			}
+		}
+
+		const int frames = o.frames > 0 ? o.frames : ( spectrum.empty() ? 0 : static_cast< int >( spectrum.size() ) );
+		if( spectrum.empty() )
+			i.inject( o.level );
+
+		ProcessOpenGLStruct gl = {};
+		gl.HostFBO             = t.fbo;
+		std::vector< unsigned char > raw( static_cast< size_t >( o.width ) * o.height * 4 );
+		std::vector< unsigned char > out( raw.size() );
+		const size_t                 row = static_cast< size_t >( o.width ) * 4;
+
+		for( int f = 0; status == 0 && ( frames <= 0 || f < frames ); ++f )
+		{
+			for( const auto& track : automation )
+				i.set( track.first, valueAt( track.second, f ) );
+
+			if( !spectrum.empty() )
+			{
+				const auto& bins = spectrum[ std::min< size_t >( static_cast< size_t >( f ), spectrum.size() - 1 ) ];
+				for( int b = 0; b < audio::kBins; ++b )
+					i.plugin.SetParamElementValue( PT_AUDIO, static_cast< unsigned >( b ), bins[ b ] );
+			}
+
+			glBindFramebuffer( GL_FRAMEBUFFER, t.fbo );
+			glViewport( 0, 0, t.w, t.h );
+			glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
+			glClear( GL_COLOR_BUFFER_BIT );
+			glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+			i.plugin.SetTime( static_cast< double >( f ) / o.fps );
+			if( i.plugin.ProcessOpenGL( &gl ) != FF_SUCCESS )
+			{
+				std::fprintf( stderr, "ndtest: ProcessOpenGL failed on frame %d\n", f );
+				status = 1;
+				break;
+			}
+
+			glBindFramebuffer( GL_FRAMEBUFFER, t.fbo );
+			glReadPixels( 0, 0, t.w, t.h, GL_RGBA, GL_UNSIGNED_BYTE, raw.data() );
+			glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+			// Top row first, because that is what a raw RGBA stream is and GL
+			// hands back the bottom row first.
+			for( int y = 0; y < o.height; ++y )
+				std::memcpy( out.data() + static_cast< size_t >( y ) * row,
+							 raw.data() + static_cast< size_t >( o.height - 1 - y ) * row, row );
+
+			size_t written = 0;
+			while( written < out.size() )
+			{
+				const ssize_t put = write( STDOUT_FILENO, out.data() + written, out.size() - written );
+				if( put <= 0 )
+					break;
+				written += static_cast< size_t >( put );
+			}
+			if( written < out.size() )
+				break;// the reader hung up; not a failure
+		}
+	}
+	t.Destroy();
+	return status;
+}
+
 int main( int argc, char** argv )
 {
 	std::string                                          out;
 	int                                                  w = 640, h = 360, frames = 60;
 	double                                               level = -18.0, burstMs = -1.0;
 	std::vector< std::pair< std::string, std::string > > sets;
+	bool                                                 pipe = false, framesGiven = false;
+	PipeOptions                                          po;
 
 	for( int a = 1; a < argc; ++a )
 	{
@@ -1570,7 +1911,22 @@ int main( int argc, char** argv )
 		else if( arg == "--size" && a + 1 < argc )
 			std::sscanf( argv[ ++a ], "%dx%d", &w, &h );
 		else if( arg == "--frames" && a + 1 < argc )
-			frames = std::atoi( argv[ ++a ] );
+		{
+			frames      = std::atoi( argv[ ++a ] );
+			framesGiven = true;
+		}
+		else if( arg == "--pipe" )
+			pipe = true;
+		else if( arg == "--width" && a + 1 < argc )
+			w = std::atoi( argv[ ++a ] );
+		else if( arg == "--height" && a + 1 < argc )
+			h = std::atoi( argv[ ++a ] );
+		else if( arg == "--fps" && a + 1 < argc )
+			po.fps = std::atof( argv[ ++a ] );
+		else if( arg == "--script" && a + 1 < argc )
+			po.scriptPath = argv[ ++a ];
+		else if( arg == "--spectrum" && a + 1 < argc )
+			po.spectrumPath = argv[ ++a ];
 		else if( arg == "--level" && a + 1 < argc )
 			level = std::atof( argv[ ++a ] );
 		else if( arg == "--burst" && a + 1 < argc )
@@ -1588,6 +1944,15 @@ int main( int argc, char** argv )
 		}
 	}
 
+	if( pipe )
+	{
+		po.width  = w;
+		po.height = h;
+		po.frames = framesGiven ? frames : 0;
+		po.level  = level;
+		po.sets   = sets;
+		return runPipe( po );
+	}
 	if( !out.empty() )
 		return runOut( out, w, h, frames, level, burstMs, sets );
 
@@ -1596,6 +1961,9 @@ int main( int argc, char** argv )
 		"              --friction | --defaults | --names | --list | --font\n"
 		"              --pixels | --bench\n"
 		"       ndtest --out f.png [--size WxH] [--frames N] [--level dBFS]\n"
-		"              [--burst MS] [--set Name=value ...]\n" );
+		"              [--burst MS] [--set Name=value ...]\n"
+		"       ndtest --pipe [--size WxH | --width W --height H] [--fps N] [--frames N]\n"
+		"              [--script cues.txt] [--spectrum bins.txt] [--level dBFS]\n"
+		"              [--set Name=value ...]   raw RGBA frames on stdout\n" );
 	return 2;
 }
