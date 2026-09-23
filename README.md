@@ -20,6 +20,38 @@ the output's own raster. An FFGL **source** plugin for Resolume Arena and Avenue
 <sub>A stereo pair just past 0 VU, rendered by the plugin's own offline harness
 (`ndtest`), not captured from Resolume.</sub>
 
+<!-- downloads:start -->
+
+## Download
+
+**[v0.1.0](https://github.com/stoatworks-labs/needle/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+
+<details>
+<summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`needle-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/needle/releases/download/v0.1.0/needle-0.1.0-macos-universal.dmg) | 237 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`needle-macos-universal.zip`](https://github.com/stoatworks-labs/needle/releases/latest/download/needle-macos-universal.zip) | 196 KB |
+
+</details>
+
+<details>
+<summary><b>Windows</b> — x64</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| x64 · .exe installer | [`needle-0.1.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/needle/releases/download/v0.1.0/needle-0.1.0-windows-x86_64-setup.exe) | 228 KB |
+| x64 · .zip archive | [`needle-windows-x86_64.zip`](https://github.com/stoatworks-labs/needle/releases/latest/download/needle-windows-x86_64.zip) | 122 KB |
+
+</details>
+
+All builds, checksums and release notes: [github.com/stoatworks-labs/needle/releases](https://github.com/stoatworks-labs/needle/releases).
+
+macOS builds are signed and notarised and open normally. The Windows builds are unsigned, so SmartScreen warns once.
+
+<!-- downloads:end -->
+
 ## The one idea
 
 **The movement is not a free choice.**
