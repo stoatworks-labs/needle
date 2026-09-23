@@ -231,7 +231,9 @@ It records the build, the GL driver, the solved ballistic constants, what unit
 the host's clock turned out to be, and whether any audio reached the layer — the
 last of which is the commonest reason a meter does not move.
 
+<!-- attributions:start -->
 This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+<!-- attributions:end -->
 
 ## Licence
 
