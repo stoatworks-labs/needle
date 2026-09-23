@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Needle — browser demo | Stoatworks Labs</title>
+    <meta name="description" content="Try the Needle FFGL source for Resolume in your browser: a VU, a BBC PPM, an LM3915 LED bargraph and a magic eye with standards-derived ballistics. The plugin's own shader, ported to WebGL2, driven by a port of its meter engine and a generated test signal — there is no audio in the page." />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./vendor/kit.css" />
+    <link rel="canonical" href="https://needle-demo.stoatworks-labs.com/" />
+  </head>
+  <body>
+    <main id="demo">
+      <noscript>
+        <p>
+          This demo runs the plugin's shader in your browser, so it needs
+          JavaScript and WebGL2. The plugin itself, its source and its downloads
+          are on
+          <a href="https://github.com/stoatworks-labs/needle">its repository</a>.
+        </p>
+      </noscript>
+    </main>
+
+    <script type="module" src="./plugin.js"></script>
+    <script
+      src="./vendor/support-footer.js"
+      defer
+      data-app="Needle"
+      data-repo="https://github.com/stoatworks-labs/needle"
+      data-note="A browser demo of the plugin's meter shader, over a port of its ballistics engine, driven by a generated test signal. There is no audio here and nothing you do leaves your machine."
+    ></script>
+  </body>
+</html>

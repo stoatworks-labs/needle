@@ -102,7 +102,24 @@ mappings or a tolerance in the harness.
   assumed (`Bin Law`), not measured.
 - The universal build has never run on an Intel Mac. Cost figures are
   Apple Silicon only.
-- No presets, no browser demo, no OpenFX port.
+- No presets, no OpenFX port.
+
+## Browser demo
+- Live at https://needle-demo.stoatworks-labs.com (Cloudflare Worker `needle-demo`,
+  `wrangler.toml`, assets from `demo/`). Deploy from the repo root:
+  `cf-run npx wrangler deploy`, then verify by content:
+  `curl -s 'https://needle-demo.stoatworks-labs.com/?cb=1' | grep -o '<title>[^<]*'`.
+- `demo/plugin.js` carries `source/Shaders.cpp`'s GLSL verbatim as three constants
+  (vertex, and the fragment shader's two raw strings joined A + B).
+  `demo/tools/check_shaders.py` compares them character for character and
+  `tools/verify.sh` runs it. **Change a shader, copy it across.**
+- Everything else in `plugin.js` is a hand port (Standards, Movement, Engine,
+  Audio's level law, Controls.h, BuildFrame, Render's uniform packing, Font).
+  Change the C++ and the page silently disagrees; only a reader checks it.
+- No audio: a generated test signal (the "Test signal" dropdown) is written into
+  64 bins by the page. Not Resolume's FFT.
+- `demo/vendor/` is the shared kit — never edit it; fix it in
+  `stoatworks-backend/resolume-demo/kit/` and re-run its `sync.sh needle`.
 
 ## Diagnostics
 

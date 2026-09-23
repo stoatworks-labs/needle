@@ -238,7 +238,19 @@ Not verified, and not pretended:
   above. `Bin Law` exists because the fleet disagrees with itself about it.
 - **Text is pixel-exact only at Rotation 0.** Rotate the instrument and the
   labels are resampled.
-- No factory presets, no OpenFX port, no browser demo.
+- No factory presets, no OpenFX port.
+
+## Browser demo
+
+**<https://needle-demo.stoatworks-labs.com>** — the plugin's own shader, copied
+unedited into WebGL2, over a JavaScript port of its meter engine, level law,
+parameter conversions and layout. **There is no audio in the page**: the meters
+are driven by a generated test signal (a 0 VU step, a −20 dB step, 5 ms bursts, a
+ladder of burst lengths, pink noise), which the page itself shapes into a
+64-bin spectrum. That is not Resolume's FFT — the host's calibration is unknown
+and is not reproduced — and the port is checked by nobody but a reader. The
+shader copy is checked: `demo/tools/check_shaders.py`, run by `tools/verify.sh`.
+See `demo/README.md`.
 
 ## Installing
 

@@ -34,8 +34,9 @@ sweep steps passed there too (`ndtest --pixels`, and the sweep at 160x90). The W
 installed into Arena there.** On Windows: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device. No real audio has reached
 it in a host, so Resolume's 64-bin FFT mapping is still assumed (`Bin Law`).
 The universal build has never run on an Intel Mac, and every render-cost figure
-is Apple Silicon only. There are no factory presets, no OpenFX port and no
-browser demo.
+is Apple Silicon only. There are no factory presets and no OpenFX port.
+The browser demo went live on 2026-09-24 at
+https://needle-demo.stoatworks-labs.com — see "The browser demo", below.
 
 ## The one idea
 
@@ -428,6 +429,75 @@ across.
   and the eye want to be their own sources with their own controls. As it stands
   a third of the parameters do nothing on any given Type.
 
+## The browser demo
+
+`demo/` is the page at https://needle-demo.stoatworks-labs.com, built on the
+shared kit in `stoatworks-backend/resolume-demo/` (vendored into `demo/vendor/`;
+never edit it here). It is two halves, and they are not equally faithful.
+
+**The shader is the plugin's.** `VERTEX_SHADER`, `FRAGMENT_SHADER_A` and
+`FRAGMENT_SHADER_B` in `demo/plugin.js` are the three raw strings in
+`source/Shaders.cpp`, unedited, and the page joins A + B exactly as the C++
+compiler joins adjacent literals. `demo/tools/check_shaders.py` compares each
+raw string, and the joined fragment text, character for character, fails if
+`kFragmentShader` stops being exactly two raw strings, and rejects any backslash
+but the one escaped backtick. `tools/verify.sh` runs it as "demo shaders". One
+program, one triangle from `gl_VertexID`, the R8 font texture — the same single
+pass as `Renderer::Draw`.
+
+**Everything on the CPU is a port that only a reader checks.** Standards (the
+closed-form ζ, ωn by bisection, the PPM taus), Movement (RK4 with dry friction,
+the follower, the hold, the eye), Engine (4800 Hz, whole steps, frame-one
+priming, the 0.25 s clamp, Resolve, the scale maps, the LM3915 law, every channel
+integrated whatever Count says), `Audio::LevelFromSpectrum`, every `Controls.h`
+conversion (rounded through `Math.fround`), `ToOption`, `BuildFrame`, Render's
+uniform packing and the Font table. `ndtest` has never seen any of it.
+
+Decisions made rather than asked:
+
+- **No audio, and no microphone.** The plugin's one input is Resolume's 64-bin
+  FFT buffer. The page drives it from a generated **test signal** chosen in the
+  kit's `demo.variants` dropdown, labelled "Test signal": a 0 VU step (−18 dBFS,
+  2 s on / 2 s off — the default, because it shows the rise, the overshoot and
+  the fall), a −20 dB step, a steady alignment tone, 5 ms bursts, a ladder of 5 /
+  20 / 50 / 150 / 500 ms bursts, steady pink noise, a pink-noise ramp from −60 to
+  −12 dBFS, and silence. Each frame the page integrates the envelope's power
+  over that frame's own interval (one spectrum per frame is the plugin's input
+  resolution too, so a 5 ms burst arrives averaged, as it would in Resolume) and
+  writes it into 64 bins **as magnitudes**: a tone into bin 2, pink noise as 1/f
+  with an exponential per-bin scatter. The plugin's level law then runs on them.
+- **It is not the host's FFT, and every surface says so** — the banner (`blurb`),
+  the disclosure (`differences`), a note under the transport, and the hints on
+  Reference Level, Sensitivity and Bin Law. Because the page writes magnitudes,
+  Bin Law on Magnitude reads each test level exactly and Power shows the other
+  assumption on the same numbers. A test level in dBFS means what the plugin's
+  level law reads: RMS, 1.0 = full scale.
+- **Absent from the panel:** the `Audio` buffer parameter (a host writes it; the
+  test signal stands in) and the About block (a web page has its own links). The
+  other 31 parameters are all present with the constructor's names, groups,
+  types, element lists and defaults, in `Controls.h` order. The colour triples
+  keep the plugin's names, so the kit's swatch reads "Face Red" etc. Needle has
+  no FF_TYPE_INTEGER controls, so galvo's dropdown workaround was not needed.
+- **No Clip picker and no "Use my own…"** — a source has zero inputs, so both are
+  removed from the DOM after mounting (astable's precedent).
+- **The plugin's `Clock` is not ported**: the kit's clock is already seconds.
+  Restart sends time backwards, which the engine treats as a loop point and
+  advances nothing, so the meters carry on from where they were — the plugin's
+  behaviour, kept rather than papered over with a reset.
+- A readout line under the picture shows, each frame, the level the plugin's law
+  read from the page's spectrum, the input on the meter's scale, the PPM
+  detector and the engine steps taken — so a visitor can see what went in.
+
+Gaps: no measurement of any kind on the page (the harness is the evidence); GLSL
+ES 3.00 in WebGL2, not GL 4.1 core; JS doubles where the C++ has floats in the
+geometry; the kit's banner closes with "a native FFGL effect", which is the
+kit's fixed wording and slightly wrong for a source.
+
+Verified 2026-09-24 headlessly (Chrome + SwiftShader via cdpshot's CDP client):
+no console errors, no `.stage__status.is-error`, the VU reading 0 on the 0 VU
+step, and Type VU → PPM changing the canvas while paused; the bargraph (with its
+hold bar) and the magic eye rendered as a stereo pair on the ramp.
+
 ## Shape of the code
 
     source/meter/Standards.*  the quoted figures, and the constants solved from
@@ -445,3 +515,5 @@ across.
     tools/ndtest/             the offline harness.
     tools/sweep.py            no control is silently dead.
     tools/verify.sh           all of it.
+    demo/                     the browser demo: plugin.js (shaders verbatim,
+                              the CPU half ported), tools/check_shaders.py.

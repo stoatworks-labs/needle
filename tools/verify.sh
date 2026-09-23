@@ -139,6 +139,27 @@ else
 	fail "a shader does not compile"
 fi
 
+#---------------------------------------------------------------------------
+# The browser demo's copy of the shaders.
+#
+# demo/plugin.js carries source/Shaders.cpp's GLSL -- the vertex shader and the
+# fragment shader's two raw strings -- and two copies of a shader drift quietly,
+# because a demo that renders a plausible meter looks exactly like one that
+# renders the right one. ndtest has no idea the page exists, so this is the only
+# thing holding the page's claim to be running the plugin's own shader.
+#---------------------------------------------------------------------------
+step "demo shaders"
+if [ -f demo/tools/check_shaders.py ]; then
+	if out="$( python3 demo/tools/check_shaders.py 2>&1 )"; then
+		pass "$( printf '%s' "$out" | tail -1 )"
+	else
+		fail "the demo's shader copies have drifted from source/Shaders.cpp"
+		printf '%s\n' "$out" | tail -12
+	fi
+else
+	printf '   skipped: demo/tools/check_shaders.py is not present\n'
+fi
+
 step "build (fresh, universal)"
 rm -rf "$BUILD"
 if cmake -B "$BUILD" -DCMAKE_BUILD_TYPE=Release >/tmp/needle-configure.log 2>&1 \
