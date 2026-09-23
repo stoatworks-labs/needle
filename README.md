@@ -105,6 +105,17 @@ ten rungs.
 **Magic eye** — a 6U5, with a shadow that closes as the level rises, a warm-up
 from cold, phosphor persistence, and a target you can wear out.
 
+[![Needle — VU, PPM, LED and magic-eye meters with real ballistics, for Resolume](docs/video-thumb.png)](https://www.youtube.com/watch?v=37tMfGAREYU)
+
+*[Watch it](https://www.youtube.com/watch?v=37tMfGAREYU) — 55 seconds, with
+sound: a VU meter meeting the reference tone, a stereo pair on programme, peak
+programme meters and their fall-back, the LM3915 ladder with its hold bar, and
+a pair of 6U5 magic eyes. Every frame is the real plugin's output: an FFGL
+plugin has no window, so the footage is rendered by this repository's own
+offline harness (`ndtest --pipe`, driven by a cue sheet) rather than filmed
+off a screen, and the soundtrack is synthesised — it is exactly what the
+meters were fed.*
+
 ## Controls
 
 - **Meter** — Type (VU / PPM / Bargraph / Magic Eye), Count (mono or a stereo
