@@ -164,12 +164,13 @@ const ChannelState& Engine::Channel( int index ) const
 	return models_[ index ].state;
 }
 
-void Engine::StepAll( double h, const double* amplitudeRatio, int channels )
+void Engine::StepAll( double h, const double* amplitudeRatio )
 {
 	const Scale vuScale  = ScaleFor( MeterType::Vu );
 	const Scale eyeScale = ScaleFor( MeterType::Eye );
 
-	for( int i = 0; i < channels; ++i )
+	// Every channel, not the Count the operator has chosen. See the header.
+	for( int i = 0; i < kMaxChannels; ++i )
 	{
 		Models&      c = models_[ i ];
 		const double a = amplitudeRatio[ i ];
@@ -212,9 +213,9 @@ void Engine::StepAll( double h, const double* amplitudeRatio, int channels )
 	}
 }
 
-void Engine::Frame( double hostSeconds, const double* amplitude, int channels )
+void Engine::Frame( double hostSeconds, const double* amplitude, int inputs )
 {
-	channels = std::clamp( channels, 1, kMaxChannels );
+	inputs = std::clamp( inputs, 1, kMaxChannels );
 
 	// ---- the input, in the meter's own units --------------------------------
 	//
@@ -223,8 +224,8 @@ void Engine::Frame( double hostSeconds, const double* amplitude, int channels )
 	// and the trim are applied exactly once, here.
 	const double offsetDb = -settings_.referenceDbfs + settings_.trimDb;
 	double       ratio[ kMaxChannels ] = { 0.0, 0.0 };
-	for( int i = 0; i < channels; ++i )
-		ratio[ i ] = Amp( Db( std::max( 0.0, amplitude[ i ] ) ) + offsetDb );
+	for( int i = 0; i < kMaxChannels; ++i )
+		ratio[ i ] = Amp( Db( std::max( 0.0, amplitude[ std::min( i, inputs - 1 ) ] ) ) + offsetDb );
 
 	// ---- the interval -------------------------------------------------------
 	double dt = 0.0;
@@ -261,11 +262,14 @@ void Engine::Frame( double hostSeconds, const double* amplitude, int channels )
 
 	for( long s = 0; s < steps; ++s )
 	{
-		StepAll( h, ratio, channels );
+		StepAll( h, ratio );
 		engineSeconds_ += h;
 	}
 
 	// ---- publish ------------------------------------------------------------
+	//
+	// Every channel, hidden or not: a meter Count is not showing is still
+	// running, and what it publishes is what it would show.
 	const Scale scale   = ScaleFor( settings_.type );
 	const Scale barScale = ScaleFor( MeterType::Bargraph );
 
@@ -273,12 +277,6 @@ void Engine::Frame( double hostSeconds, const double* amplitude, int channels )
 	{
 		Models&       c = models_[ i ];
 		ChannelState& s = c.state;
-
-		if( i >= channels )
-		{
-			s = ChannelState{};
-			continue;
-		}
 
 		s.inputDb = Db( ratio[ i ] );
 		s.ppmDb   = Db( c.ppm.x );

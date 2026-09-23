@@ -14,6 +14,9 @@
 	    --rate        the same answer at 24, 30, 50, 60 and 144 fps
 	    --friction    a worn pivot stops the pointer short, and differently
 	                  depending on which way it came
+	    --pair        both meters of a Stereo Pair agree after Count goes to
+	                  Mono and back, with a negative control that freezes the
+	                  hidden one the way v0.1.0 did
 	    --defaults    Free agrees with Standard at the shipped defaults
 	    --names       no parameter name over FFGL's 16 characters
 	    --font        print every glyph
@@ -121,7 +124,9 @@
 #include <csignal>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1024,6 +1029,194 @@ int runRate()
 }
 
 //---------------------------------------------------------------------------
+// --pair
+//---------------------------------------------------------------------------
+
+/// One way of running a pair of meters: a frame in, both published channels
+/// out. The check below is written against this so it can be handed the plugin
+/// itself and, as its negative control, a model of the bug it exists to catch.
+struct PairRig
+{
+	/// Name, then: one host frame at `seconds`, with the programme at `db`
+	/// dBFS (-400 for silence), Count at `count` meters and Type at `type`.
+	const char*                                                     name;
+	std::function< void( double seconds, double db, int count, MeterType type ) > frame;
+	std::function< const ChannelState&( int channel ) >                          channel;
+};
+
+/// The plugin's own frame path, no GL: Count and Type set through the
+/// parameter list, the spectrum written into the Audio buffer the way a host
+/// writes it, and `AdvanceEngine` -- which is exactly what `ProcessOpenGL`
+/// calls -- taking the frame.
+PairRig PluginPair( NeedlePlugin& plugin )
+{
+	plugin.ForceSecondsClock();
+	return {
+		"the plugin",
+		[ &plugin ]( double seconds, double db, int count, MeterType type ) {
+			plugin.SetFloatParameter( PT_TYPE, static_cast< float >( type ) );
+			plugin.SetFloatParameter( PT_COUNT, static_cast< float >( count - 1 ) );
+			const float level = db <= -400.0 ? 0.0f : static_cast< float >( AmpFromDb( db ) );
+			for( int i = 0; i < audio::kBins; ++i )
+				plugin.SetParamElementValue( PT_AUDIO, static_cast< unsigned >( i ),
+											 i == kInjectBin ? level : 0.0f );
+			plugin.AdvanceEngine( seconds );
+		},
+		[ &plugin ]( int channel ) -> const ChannelState& {
+			return plugin.EngineState().Channel( channel );
+		},
+	};
+}
+
+/// The negative control: v0.1.0's rule, rebuilt from the engine's public API.
+/// The left meter runs on every frame. The right one is a second engine whose
+/// clock only moves while Count is on Stereo Pair, so while it is hidden it
+/// takes no steps at all -- which is precisely what `StepAll( h, ratio,
+/// channels )` did -- and it resumes from wherever it stopped.
+struct FrozenRightPair
+{
+	Engine left, right;
+	double lastSeconds = 0.0, rightClock = 0.0;
+	bool   rightStarted = false;
+
+	PairRig Rig()
+	{
+		return {
+			"v0.1.0's rule (the right meter freezes while hidden)",
+			[ this ]( double seconds, double db, int count, MeterType type ) {
+				Settings s;
+				s.type = type;
+				left.SetSettings( s );
+				right.SetSettings( s );
+				const double a[ 1 ] = { db <= -400.0 ? 0.0 : AmpFromDb( db ) };
+				left.Frame( seconds, a, 1 );
+				if( count == 2 )
+				{
+					if( rightStarted )
+						rightClock += seconds - lastSeconds;
+					else
+						rightClock = seconds;
+					rightStarted = true;
+					right.Frame( rightClock, a, 1 );
+				}
+				lastSeconds = seconds;
+			},
+			[ this ]( int channel ) -> const ChannelState& {
+				return channel == 0 ? left.Channel( 0 ) : right.Channel( 0 );
+			},
+		};
+	}
+};
+
+/// Every field the drawing reads, compared exactly. Both meters are fed the
+/// same programme at the same instants and integrated by the same code, so
+/// there is nothing for a tolerance to absorb: they agree to the last bit or
+/// something has kept them apart.
+bool SameReading( const ChannelState& a, const ChannelState& b )
+{
+	if( a.inputDb != b.inputDb || a.deflection != b.deflection || a.ppmDb != b.ppmDb ||
+		a.holdDb != b.holdDb || a.holdDeflection != b.holdDeflection ||
+		a.litSegments != b.litSegments || a.eyeShadowDeg != b.eyeShadowDeg ||
+		a.eyeOverlapDeg != b.eyeOverlapDeg || a.eyeWarm != b.eyeWarm )
+		return false;
+	for( int k = 0; k < standards::kBargraphSteps; ++k )
+		if( a.segment[ k ] != b.segment[ k ] )
+			return false;
+	return true;
+}
+
+/// The scenario from the 2026-09-23 film: a Stereo Pair at one level, Count to
+/// Mono while the level changes, and back to Stereo Pair. At 60 fps: one second
+/// paired at `before`, two seconds on Mono at `after`, then three seconds paired
+/// again at `after` -- longer than any of the four instruments takes to settle,
+/// so a meter that is merely slow to agree fails as surely as one that never
+/// does. Every frame on which both meters are drawn is compared.
+void PairCheck( const PairRig& rig, MeterType type, double before, double after, const char* what )
+{
+	const double fps = 60.0;
+	int    compared = 0, disagreed = 0;
+	double firstBad = -1.0, worst = 0.0;
+
+	for( int f = 0; f <= static_cast< int >( 6.0 * fps ); ++f )
+	{
+		const double t     = static_cast< double >( f ) / fps;
+		const bool   mono  = t >= 1.0 && t < 3.0;
+		const int    count = mono ? 1 : 2;
+		rig.frame( t, t < 1.0 ? before : after, count, type );
+		if( count != 2 )
+			continue;
+
+		const ChannelState& l = rig.channel( 0 );
+		const ChannelState& r = rig.channel( 1 );
+		++compared;
+		if( !SameReading( l, r ) )
+		{
+			++disagreed;
+			if( firstBad < 0.0 )
+				firstBad = t;
+			worst = std::max( worst, std::fabs( l.deflection - r.deflection ) );
+		}
+	}
+
+	static const char* kTypeNames[] = { "VU", "PPM", "Bargraph", "Magic Eye" };
+	std::string detail = std::to_string( compared ) + " paired frames";
+	if( disagreed > 0 )
+		detail += ", " + std::to_string( disagreed ) + " disagree from t = " + F( firstBad, 3 ) +
+				  " s, worst " + F( worst, 4 ) + " of full scale";
+	Check( disagreed == 0, std::string( kTypeNames[ static_cast< int >( type ) ] ) + ", " + what +
+							   ": both meters read the same on every paired frame (" + detail + ")" );
+}
+
+/// All four Types, the level falling and rising while the right meter is hidden.
+void PairChecks( const std::function< PairRig() >& make )
+{
+	const double reference = -18.0;
+	for( int ty = 0; ty < kMeterTypeCount; ++ty )
+	{
+		const MeterType type = static_cast< MeterType >( ty );
+		PairCheck( make(), type, reference, -400.0, "level falls while on Mono" );
+		PairCheck( make(), type, -400.0, reference + 6.0, "level rises while on Mono" );
+	}
+}
+
+int runPair()
+{
+	std::printf( "both meters of a Stereo Pair agree after Count goes to Mono and back\n\n" );
+
+	// Owned here so each scenario starts from a fresh instrument.
+	std::vector< std::unique_ptr< NeedlePlugin > >    plugins;
+	std::vector< std::unique_ptr< FrozenRightPair > > frozen;
+
+	std::printf( "  the plugin, through the parameter list and its own frame path:\n" );
+	PairChecks( [ & ] {
+		plugins.push_back( std::make_unique< NeedlePlugin >() );
+		return PluginPair( *plugins.back() );
+	} );
+	const int realFailures = failures;
+
+	// The negative control. The same check, handed v0.1.0's rule: it must
+	// fail, and on every scenario, or it could not have caught the bug it
+	// exists for and passing it would mean nothing.
+	std::printf( "\n  negative control -- %s:\n", FrozenRightPair{}.Rig().name );
+	const int before = failures;
+	PairChecks( [ & ] {
+		frozen.push_back( std::make_unique< FrozenRightPair >() );
+		return frozen.back()->Rig();
+	} );
+	const int caught = failures - before;
+	failures         = before;
+	const int scenarios = 2 * kMeterTypeCount;
+
+	std::printf( "\n" );
+	Check( caught == scenarios, "the negative control fails " + std::to_string( caught ) + " of " +
+									std::to_string( scenarios ) +
+									" scenarios -- the check can see a frozen meter" );
+
+	std::printf( "\n  %s\n", failures == 0 && realFailures == 0 ? "PASS" : "FAIL" );
+	return failures == 0 ? 0 : 1;
+}
+
+//---------------------------------------------------------------------------
 // --defaults
 //---------------------------------------------------------------------------
 int runDefaults()
@@ -1894,6 +2087,8 @@ int main( int argc, char** argv )
 			return runRate();
 		if( arg == "--friction" )
 			return runFriction();
+		if( arg == "--pair" )
+			return runPair();
 		if( arg == "--defaults" )
 			return runDefaults();
 		if( arg == "--names" )
@@ -1958,7 +2153,7 @@ int main( int argc, char** argv )
 
 	std::printf(
 		"usage: ndtest --ballistics | --ppm | --steps | --eye | --prime | --rate\n"
-		"              --friction | --defaults | --names | --list | --font\n"
+		"              --friction | --pair | --defaults | --names | --list | --font\n"
 		"              --pixels | --bench\n"
 		"       ndtest --out f.png [--size WxH] [--frames N] [--level dBFS]\n"
 		"              [--burst MS] [--set Name=value ...]\n"

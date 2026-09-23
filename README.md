@@ -156,7 +156,7 @@ Three honest limits follow, and none of them is hidden:
 
 ## Status
 
-**v0.1.0, built 2026-09-22 and released on 2026-09-23, and honestly early.**
+**v0.1.1, released on 2026-09-23 (v0.1.0 the same day), and honestly early.**
 
 User guide: [docs/USER-GUIDE.md](docs/USER-GUIDE.md), also at
 https://stoatworks-labs.com/software/needle/guide/
@@ -183,6 +183,10 @@ Verified, by measurement on this machine (Apple Silicon, macOS 26.4):
   short of its target, inside the 3 % dead band the friction implies, and at a
   different place depending on which way it came. At Wear 0 it is bit-identical
   to a frictionless movement at every one of 9,600 steps.
+- **A Stereo Pair after Mono and back.** Both meters read the same, bit for bit,
+  on every paired frame, on all four Types, whether the level fell or rose while
+  the right one was hidden. v0.1.0 froze the hidden meter, and the same check
+  catches that on 8 of 8 scenarios (fixed in v0.1.1).
 - **The picture.** Pixel-exact draws at 640×360 and 1920×1080; all **31**
   controls change it; the bundle is universal, exports `plugMain`, signs, and
   passes `oxbow selftest` as `ND01` / Needle / source.
@@ -259,6 +263,7 @@ differential equation and a rasteriser has no opinion about those:
     ./build/ndtest --prime          # frame one, and a clip trigger at t = 40 s
     ./build/ndtest --rate           # 24, 30, 50, 60 and 144 fps agree
     ./build/ndtest --friction       # a worn pivot, and what it does not touch
+    ./build/ndtest --pair           # a Stereo Pair agrees after Mono and back
     ./build/ndtest --pixels         # and the one check that reads a rasteriser
     ./build/ndtest --bench          # 720p through 4K
     ./build/ndtest --out /tmp/f.png --size 1920x1080 --level -18 --set "Type=1"

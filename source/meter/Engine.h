@@ -183,8 +183,17 @@ public:
 	const Resolved& CurrentBallistics() const { return resolved_; }
 
 	/// One host frame. `amplitude` is per channel, linear, 1.0 = digital full
-	/// scale. `hostSeconds` is the host's clock, already normalised to seconds.
-	void Frame( double hostSeconds, const double* amplitude, int channels );
+	/// scale, and holds `inputs` values; a channel past the last one supplied
+	/// reads the last one. `hostSeconds` is the host's clock, already
+	/// normalised to seconds.
+	///
+	/// **Every channel is integrated on every frame, whatever Count says.**
+	/// Count decides how many meters are drawn, never how many are running: a
+	/// meter that stopped while hidden would come back showing the level from
+	/// before it was hidden, and swing for two seconds to catch up with a
+	/// neighbour that never stopped. `ndtest --pair` holds that, with a
+	/// negative control that freezes the hidden meter the way v0.1.0 did.
+	void Frame( double hostSeconds, const double* amplitude, int inputs );
 
 	const ChannelState& Channel( int index ) const;
 
@@ -200,7 +209,7 @@ public:
 	static constexpr int kMaxChannels = 2;
 
 private:
-	void StepAll( double h, const double* amplitudeRatio, int channels );
+	void StepAll( double h, const double* amplitudeRatio );
 
 	/// The four instruments for one channel. Named for what they are rather
 	/// than for the channel, because `Channel` is already the accessor that

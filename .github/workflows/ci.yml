@@ -40,7 +40,7 @@ jobs:
         # Mac's rasteriser and failed here, and in all four cases the test was
         # wrong rather than the plugin.
         run: |
-          for t in ballistics ppm steps eye prime rate friction defaults names font; do
+          for t in ballistics ppm steps eye prime rate friction pair defaults names font; do
             ./build/ndtest "--$t"
           done
 

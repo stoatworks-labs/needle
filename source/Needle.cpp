@@ -317,9 +317,12 @@ void NeedlePlugin::AdvanceEngine( double hostSeconds )
 	// FFGL 2.1 has exactly one FF_USAGE_FFT buffer to offer. A stereo pair
 	// therefore shows the same level twice: it is the instrument people
 	// recognise rather than two measurements, and the README says so.
+	//
+	// Both meters are fed and integrated whatever Count says, so switching to
+	// Mono and back cannot leave the right one showing a stale level.
 	const double level = InputLevel();
 	const double a[ Engine::kMaxChannels ] = { level, level };
-	mEngine.Frame( hostSeconds, a, CurrentSettings().channels );
+	mEngine.Frame( hostSeconds, a, Engine::kMaxChannels );
 }
 
 void NeedlePlugin::LocalToScreen( const Unit& unit, float lx, float ly, float& sx, float& sy )

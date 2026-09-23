@@ -28,6 +28,8 @@ mappings or a tolerance in the harness.
   - `./build/ndtest --rate` — the same answer at 24, 30, 50, 60 and 144 fps
   - `./build/ndtest --friction` — a worn pivot stops the pointer short, and differently
     depending on which way it came
+  - `./build/ndtest --pair` — both meters of a Stereo Pair agree, bit for bit, after
+    Count goes to Mono and back; its negative control is v0.1.0's frozen right meter
   - `./build/ndtest --defaults` — Free agrees with Standard at the shipped defaults
   - `./build/ndtest --names` — no name over 16 characters, none duplicated
 - Pixels (the only check that needs a rasteriser): `./build/ndtest --pixels`
@@ -57,6 +59,10 @@ mappings or a tolerance in the harness.
   depending on which way it came. At Wear 0 the movement is bit-identical to the
   frictionless one, and `--friction` asserts that — the ANSI claim is made
   there.
+- **Count decides how many meters are DRAWN, never how many RUN.** The engine
+  integrates both channels on every frame. v0.1.0 stepped only the visible ones,
+  so after Mono and back the right meter resumed from where it had stopped and
+  disagreed with the left for about two seconds. Fixed in v0.1.1; `--pair`.
 - **The CPU computes every pixel coordinate**; the shader only decides coverage.
   That is what lets `--pixels` probe coordinates the plugin itself produced.
 - **`quiet()` in the harness is graticule's burn-in plate.** Lamp, Glass, Wear,

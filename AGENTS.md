@@ -15,7 +15,8 @@ bisection, the magic eye's shadow, frame-one priming, frame-rate independence,
 the dead band a worn pivot leaves, the defaults, the names, the font, the pixel checks at two rasters, the
 dead-control sweep, registration, lipo, plist, ad-hoc codesign and oxbow.
 
-Released at v0.1.0 on 2026-09-23, public at github.com/stoatworks-labs/needle
+Released at v0.1.0 on 2026-09-23 and v0.1.1 the same day (the Stereo Pair fix,
+below), public at github.com/stoatworks-labs/needle
 (created the same day), and registered with the website (`projects.json`, beta,
 guide) and with stoatworks-backend's sync-about TARGETS, `names.json`,
 `visibility.json` and `derived.json`. The user guide is `docs/USER-GUIDE.md`,
@@ -199,7 +200,7 @@ size?*
 
 **The structural answer, first.** Nine of the eleven check groups open **no GL
 context at all** — `--ballistics`, `--ppm`, `--steps`, `--eye`, `--prime`,
-`--rate`, `--friction`, `--defaults`, `--names` and `--font` drive `source/meter/` and the
+`--rate`, `--friction`, `--pair`, `--defaults`, `--names` and `--font` drive `source/meter/` and the
 parameter list directly. They cannot depend on a rasteriser or a raster because
 neither exists while they run. That is the single most important decision in the
 harness and it is why `verify.sh` groups them under "physics (no GL)".
@@ -232,6 +233,7 @@ harness and it is why `verify.sh` groups them under "physics (no GL)".
 | ...short of the target, and at a different place each way | orderings | The signature of dry friction as against damping: a damped movement arrives, a dry one stops. Measured 0.0402 apart. |
 | Wear 0 is bit-identical to no friction | exact equality, every step for two seconds | The headline ANSI C16.5 claim is made at Wear 0, so this is the check that stops the friction path reaching it. Not a tolerance: `==` on both state variables at every one of 9,600 steps. |
 | Five frame rates agree | `2 × maxSlope × 1/rate`, computed at run time | Nothing is hard-coded: the harness measures the movement's steepest slope from its own trajectory and multiplies by one step, which is the most two frame rates can differ by. Measured spread exactly zero against an allowance of 2.4e-3. |
+| Both meters of a Stereo Pair agree after Mono and back | exact equality on every published field, every paired frame | Both channels are fed the same programme at the same instants and stepped by the same code, so there is nothing for a tolerance to absorb. Its negative control is v0.1.0's rule rebuilt from the public API (a second engine whose clock only runs while paired); it must fail all 8 scenarios, and it does, with the same numbers as a build of the real v0.1.0 source. |
 | Free agrees with Standard at the defaults | 1e-4 relative | The controls are floats (~7 significant digits) and the rise map amplifies relative error by `ln 100 = 4.6`, so the floor is ~5e-7. 1e-4 is two hundred times that and still far tighter than the gap between any two values anybody would confuse. |
 | Reference, trim, hold time, hold decay | 1e-4 / 1e-3 absolute | Exact linear maps of exactly-representable constants; the tolerance is a float-rounding allowance. |
 | Names, duplicates, blank and duplicate glyphs | counts | No tolerance. |
@@ -330,6 +332,22 @@ across.
   discontinuous at zero velocity, so it is applied after the step rather than in
   the derivative, semi-implicitly: if the step's own velocity decrement would
   reverse the pointer, it either stops dead or the spring drags it through.
+- **A hidden meter that stopped.** v0.1.0's `StepAll` looped over `channels`,
+  which was Count, so while Count was on Mono the right meter took no steps at
+  all, and on Stereo Pair again it resumed from the level it had when it
+  stopped — for about two seconds it disagreed with the left one, as seen on
+  the bargraph while filming with `ndtest --pipe` on 2026-09-23. Re-seeding it
+  from the left meter on reappearance was the other option and was rejected: a
+  re-seed is a jump the model did not make, and it would need its own rule for
+  every state variable (the hold bar, the eye's heater, a worn pointer's
+  resting place). A meter that is simply always running needs no rule at all.
+  So since v0.1.1 **Count decides how many meters are drawn, never how many
+  run**: `Engine::Frame` integrates and publishes every channel on every frame,
+  and a channel past the inputs supplied reads the last one. The cost is a
+  second set of four scalar models at 4800 Hz, which `--bench` cannot see.
+  `ndtest --pair` checks it through the plugin's own parameter list, on all
+  four Types, with the level falling and rising while the right meter is
+  hidden, and carries its own negative control.
 - **Asserting that two floating-point clock origins agree bit for bit.** See
   `--prime`, above.
 - **A dial's proportions are not free either.** The first version put the pivot
