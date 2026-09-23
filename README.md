@@ -24,14 +24,14 @@ the output's own raster. An FFGL **source** plugin for Resolume Arena and Avenue
 
 ## Download
 
-**[v0.1.0](https://github.com/stoatworks-labs/needle/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+**[v0.1.1](https://github.com/stoatworks-labs/needle/releases/tag/v0.1.1)** — prebuilt for macOS and Windows. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`needle-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/needle/releases/download/v0.1.0/needle-0.1.0-macos-universal.dmg) | 237 KB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`needle-0.1.1-macos-universal.dmg`](https://github.com/stoatworks-labs/needle/releases/download/v0.1.1/needle-0.1.1-macos-universal.dmg) | 238 KB |
 | Universal (Apple Silicon + Intel) · .zip archive | [`needle-macos-universal.zip`](https://github.com/stoatworks-labs/needle/releases/latest/download/needle-macos-universal.zip) | 196 KB |
 
 </details>
@@ -41,7 +41,7 @@ the output's own raster. An FFGL **source** plugin for Resolume Arena and Avenue
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`needle-0.1.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/needle/releases/download/v0.1.0/needle-0.1.0-windows-x86_64-setup.exe) | 228 KB |
+| x64 · .exe installer | [`needle-0.1.1-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/needle/releases/download/v0.1.1/needle-0.1.1-windows-x86_64-setup.exe) | 229 KB |
 | x64 · .zip archive | [`needle-windows-x86_64.zip`](https://github.com/stoatworks-labs/needle/releases/latest/download/needle-windows-x86_64.zip) | 122 KB |
 
 </details>
