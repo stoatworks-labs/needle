@@ -25,7 +25,7 @@ captured from Resolume.*
 > plugin a 64-bin spectrum, and nobody has measured whether those bins are magnitudes or powers, or
 > what level a full-scale tone produces — so the calibration is nominal, and **Bin Law** exists to
 > let you flip the one assumption that would otherwise be buried.
-> <!-- ARENA -->It has not yet been run in Resolume on Windows either.<!-- /ARENA -->
+> On Windows, a build of v0.1.0 loads, registers as a source and draws its meters in Resolume Arena 7.27.1, with every control matching what the plugin declares — on software rendering and on a machine with no sound device, so the audio path has not been heard there either.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.

@@ -10,7 +10,7 @@
 > input, not read back from the code that set them — are **3.000000 dB** apart
 > (`--steps`). Every one of the 31 controls is proven to change the picture, and
 > the bundle registers, instantiates and lights pixels under the fleet's oxbow
-> host. **It has never been loaded into Resolume.**
+> host. **It has never been loaded into Resolume on a Mac.**
 
 Audio meters with the ballistics their standards actually specify, drawn live at
 the output's own raster. An FFGL **source** plugin for Resolume Arena and Avenue.
@@ -124,7 +124,10 @@ Three honest limits follow, and none of them is hidden:
 
 ## Status
 
-**v0.1.0, 2026-09-22, and honestly early.**
+**v0.1.0, built 2026-09-22 and released on 2026-09-23, and honestly early.**
+
+User guide: [docs/USER-GUIDE.md](docs/USER-GUIDE.md), also at
+https://stoatworks-labs.com/software/needle/guide/
 
 Verified, by measurement on this machine (Apple Silicon, macOS 26.4):
 
@@ -157,12 +160,21 @@ Verified, by measurement on this machine (Apple Silicon, macOS 26.4):
   is dominated by scheduling rather than by the shader, and back-to-back passes
   at 4K have spanned 0.020 to 0.077 ms on an otherwise idle machine. The bench
   quotes its fastest pass of five with the spread printed beside it; a single
-  average there would be measuring the machine's mood.
+  average there would be measuring the machine's mood. It is an Apple Silicon
+  figure; nothing has timed a frame on Windows or on an Intel Mac.
+
+On GitHub, 2026-09-23: `ci.yml` runs on GitHub's macOS runner, which has no GPU,
+so the harness falls back to Apple's software renderer — a second rasteriser.
+The physics checks (`--ballistics --ppm --steps --eye --prime --rate --friction
+--defaults --names --font`) passed on the runner; the pixel and sweep steps
+passed there too (`ndtest --pixels`, and the sweep at 160x90). The Windows x64 DLL was compiled with MSVC on GitHub's Windows runner and
+the job passed.
 
 Not verified, and not pretended:
 
-- **Never loaded into Resolume**, and not installed into it. Everything above is
-  the offline harness driving the real plugin class in a headless GL context.
+- **Never loaded into Resolume on macOS**, and not installed into it there.
+  Everything above is the offline harness driving the real plugin class in a
+  headless GL context.
   How 31 controls across four groups present in Resolume's inspector is
   untested.
 - **Three of the quoted figures came from background knowledge and were not
@@ -172,12 +184,14 @@ Not verified, and not pretended:
   the 6U5's 100-degree shadow angle. `AGENTS.md` separates those from the
   figures that were supplied, and each names the single constant to change if it
   turns out to be wrong. Only the first can affect a ballistic claim.
-- **Windows is CI-only and the CI has never run.**
+- **Windows in Resolume Arena:** a CI build of the v0.1.0 source went through the fleet's Arena gate on 2026-09-23 (Resolume Arena 7.27.1 on win-lab, Mesa llvmpipe, no GPU) and passed 9 of 9, with one honest SKIP. It loads from Extra Effects, registers as `SW Needle` / `ND01` / **source**, is listed among Arena's sources, all 37 host parameters match the declaration in name, order, type, range and default, it renders a meter, and Arena's log stays clean. 21 controls measurably moved the picture (4 of them under a precondition, such as Background on for the background colour); the 11 that act on audio (Reference Level, Sensitivity, Bin Law, Standard, the five ballistics, Persistence and the Audio input) were skipped, because win-lab has no sound device. So Windows has still not heard real audio either. It says nothing about speed or a real GPU.
+- **No real audio has reached it in a host**, and the universal build has never
+  run on an Intel Mac.
 - **The host's audio buffer is uncalibrated and its bin law is unmeasured** — see
   above. `Bin Law` exists because the fleet disagrees with itself about it.
 - **Text is pixel-exact only at Rotation 0.** Rotate the instrument and the
   labels are resampled.
-- No factory presets, no OpenFX port, no browser demo, no user guide, no release.
+- No factory presets, no OpenFX port, no browser demo.
 
 ## Installing
 
