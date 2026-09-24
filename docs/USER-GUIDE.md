@@ -298,7 +298,10 @@ gets: one pass is so cheap that the number is dominated by scheduling, and back-
 - **Free at the defaults is not identical to Standard.** The VU's rise and overshoot and the PPM's
   fall match; the VU's and eye's fall and the PPM's rise do not, because one Rise and one Fall
   control cannot match both instruments' standards at once.
-- Text is pixel-exact only at Rotation 0. No factory presets, no OpenFX port, no browser demo.
+- Text is pixel-exact only at Rotation 0. No factory presets and no OpenFX port.
+- **There is a browser demo** at [needle-demo.stoatworks-labs.com](https://needle-demo.stoatworks-labs.com).
+  It is a port to a web page, not the plugin: the shaders run in WebGL2 and any CPU
+  half is rewritten in JavaScript. The page lists what it does not reproduce.
 
 ---
 
