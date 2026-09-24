@@ -1654,6 +1654,9 @@ function readout(level, engine) {
 
 const mounted = mountDemo({
   name: 'Needle',
+  // The FFGL type the plugin registers (PluginInfo), for the kit banner's
+  // closing sentence, which said "effect" on every page until 2026-09-24.
+  kind: 'source',
   pluginId: 'ND01',
   tagline:
     'Four audio meters — a VU, a BBC PPM, an LM3915 LED bargraph and a magic eye — each moving the way its standard says it must. The VU’s damping and natural frequency are solved from ANSI C16.5’s two sentences, the PPM’s time constants from IEC 60268-10 type II, and the engine integrates them at 4800 Hz whatever the frame rate.',
