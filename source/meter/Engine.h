@@ -36,6 +36,13 @@ inline constexpr double kEngineRate = 4800.0;
 /// arriving all at once.
 inline constexpr double kMaxFrameSeconds = 0.25;
 
+/// Where a dial's pointer meets its stops, in deflection units: a hair past
+/// each end of the scale, because a real pointer stops on a pin rather than on
+/// the last mark. The VU's movement is held between them (`Engine::StepAll`)
+/// and both dials are drawn between them (`NeedlePlugin::BuildFrame`).
+inline constexpr double kDialStopLow  = -0.02;
+inline constexpr double kDialStopHigh = 1.035;
+
 /// Where a meter's scale begins and ends, and what it is linear in.
 ///
 /// **A VU scale is linear in voltage and a PPM scale is linear in decibels**,
@@ -52,11 +59,49 @@ struct Scale
 Scale ScaleFor( MeterType type );
 
 /// Deflection for a level, in scale units where 1.0 is the top of the scale.
-/// Not clamped above: a needle can pin, and an eye's wings can overlap.
+/// Not clamped above: a VU's drive can be far past full scale -- its movement
+/// then rests on `kDialStopHigh` -- and an eye's wings can overlap.
 double DeflectionFor( const Scale& scale, double amplitudeRatio );
 
 /// The inverse, for the harness: the amplitude ratio that deflects to `d`.
 double AmplitudeForDeflection( const Scale& scale, double d );
+
+/// One engine step of a movement whose rise and fall may differ (Free), with
+/// dry friction given as a dead band so it means the same at any ballistics.
+///
+/// **Which spring drives it is decided by where the pointer is going, not by
+/// which side of its target it is on.** v0.1.1 chose by `u >= x`, so the moment
+/// a rising pointer passed its target it was handed the fall's spring and the
+/// fall's damping -- and with a slow Fall both are weak, so the pointer coasted
+/// on: in Free at the shipped defaults (Rise 300 ms, Fall 2.8 s, Overshoot
+/// 1.25 %) a step to 0 VU overshot by 11.6 %, with Fall at 20 s by 83 %, and on
+/// a programme of beats the needle read well above anything in the programme.
+///
+/// The rule now:
+///
+///   * **At rest, or heading for the target**, the pointer runs on its own
+///     direction's spring: the rise's on the way up, the fall's on the way
+///     down. That is the whole of the swing that Rise and Fall are defined on
+///     (99 % of a step), so both stay exact.
+///   * **Carried past the target** -- an overshoot, an undershoot, or a drive
+///     that reversed while the pointer was still moving -- it is braked by
+///     the STIFFER of the two springs, until it turns round. So it can never
+///     run further past its target than its own Overshoot allows: exactly the
+///     Overshoot when its own direction is the faster one (a rise, at the
+///     shipped defaults), less when it is the slower. And a new rise that
+///     arrives during a slow fall is caught at once rather than waiting for
+///     the fall's weak spring to turn the pointer round.
+///
+/// The turn-round usually falls inside a step. Taking the whole step on the
+/// stiff spring would hand a pointer that was creeping the wrong way a kick of
+/// `omega^2 . (u - x) . h` -- 4 full scales a second at a 20 ms Rise -- so the
+/// step is split at the turn, found by interpolating the velocity, and the
+/// rest of it is taken on the direction's own spring.
+///
+/// On Standard the two springs are one, and this is exactly `Movement::Step`,
+/// bit for bit. `ndtest --free` holds all of it.
+void DriveMovement( Movement& m, double h, double u, double zeta, double omegaUp, double omegaDown,
+					double deadBand );
 
 /// What the operator asked for, in physical units.
 struct Settings

@@ -120,14 +120,16 @@ meters were fed.*
 
 - **Meter** — Type (VU / PPM / Bargraph / Magic Eye), Count (mono or a stereo
   pair), Reference Level (the dBFS the meter calls zero, −18 by default),
-  Sensitivity (±12 dB of trim), Bin Law, and **Standard**.
-- **Ballistics** — Rise, Fall, Overshoot, Peak Hold, Hold Decay. With **Standard**
-  on, the first three are *out of the model entirely*: every constant comes from
-  the specification. With it off they are yours, and the result is deliberately
-  not a movement any more — a rise that differs from a fall is a switched system
-  and no mass on a spring does that. Peak Hold and Hold Decay stay live on both
-  settings, because no standard specifies them.
-- **Look** — Face and Needle colour, Scale Style, Lamp, Glass, Wear, Persistence.
+  Sensitivity (±12 dB of trim) and Bin Law.
+- **Ballistics** — **Standard**, Rise, Fall, Overshoot, Peak Hold, Hold Decay.
+  With Standard on, the next three are *out of the model entirely* — every
+  constant comes from the specification — and the inspector hides them. With it
+  off they are yours, and the result is deliberately not a movement any more — a
+  rise that differs from a fall is a switched system and no mass on a spring does
+  that. Peak Hold and Hold Decay stay live on both settings, because no standard
+  specifies them, and are shown on the bargraph, the only meter with a hold bar.
+- **Look** — Face and Needle colour, Scale Style, Lamp, Glass, Wear, Persistence
+  (shown on the magic eye only).
   **Wear** is the only one of those that is not purely cosmetic: as well as
   dirtying the glass and dimming the phosphor it puts dry friction in the pivot.
   At Wear 0, which is the default, the movement is bit-identical to a clean one.
@@ -140,21 +142,26 @@ One Rise and one Fall cannot be both meters at once, though, so flipping
 Standard off at the defaults is **not** a no-op everywhere: in Free the VU (and
 the magic eye) falls over the PPM's 2.8 s instead of its own 300 ms, and the PPM
 rises over the VU's 300 ms instead of its own few milliseconds. The switch
-alone leaves the VU's rise and the PPM's fall exactly where they were.
+alone leaves the VU's rise and overshoot and the PPM's fall exactly where they
+were (`ndtest --free` measures the overshoot as a trajectory, not a constant).
 
 ## What it reads, and what it cannot
 
 Resolume gives an FFGL plugin one thing: a 64-bin spectrum, once per frame.
-needle takes its level as the square root of the sum over **all** of those bins,
-which by Parseval's theorem is the signal's power however the bins happen to be
-laid out in frequency — so the fleet's long-standing and untested assumption that
-they run linearly to Nyquist is one this plugin does not have to make.
+needle takes its level as the RMS over **all** of those bins — what the FFGL
+SDK's own `ffglqs::Audio` calls the volume — which by Parseval's theorem follows
+the signal's power however the bins happen to be laid out in frequency, so the
+fleet's long-standing and untested assumption that they run linearly to Nyquist
+is one this plugin does not have to make. Up to v0.1.1 it took the root of the
+*sum*, 18 dB higher, and a real Resolume rig pinned the needle at the default
+Reference Level ([#1](https://github.com/stoatworks-labs/needle/issues/1)).
 
 Three honest limits follow, and none of them is hidden:
 
 - **The calibration is nominal.** Whether a full-scale sine produces a bin of 1.0
   depends on the host's window and normalisation, which nothing here can
-  discover. Reference Level and Sensitivity are how you put the needle where
+  discover. The SDK's footing is a better-grounded guess than the sum was, not a
+  measurement. Reference Level and Sensitivity are how you put the needle where
   your programme actually sits.
 - **It is not a true-peak meter.** A magnitude spectrum has no phase, so the
   time-domain peak inside the block cannot be recovered from it. The PPM and the
@@ -194,6 +201,19 @@ Verified, by measurement on this machine (Apple Silicon, macOS 26.4):
   short of its target, inside the 3 % dead band the friction implies, and at a
   different place depending on which way it came. At Wear 0 it is bit-identical
   to a frictionless movement at every one of 9,600 steps.
+- **Free, as a trajectory** (`--free`). Over 36 steps — six Rise/Fall pairs
+  from 20 ms/20 s to 2 s/50 ms, three Overshoots, up and down — a step in the
+  faster direction overshoots by exactly the Overshoot, the slower by less, and
+  each reaches 99 % in exactly its own Rise or Fall. At the shipped defaults a
+  step to 0 VU overshoots **1.2500 %**; v0.1.1's switching rule gave 11.6 %, and
+  the same check fails on it. On programme the needle stays within the
+  programme's range plus what its Overshoot can carry, on every setting tried.
+- **The stop.** 24 dB over 0 VU the pointer rests at 1.035 of full scale and
+  leaves within a frame of the level going; v0.1.1's ran on to 11 times full
+  scale and stayed pinned 217 ms.
+- **The level law** is the FFGL SDK's own volume to 1e-3 dB on four spectra, and
+  every bin at an SDK volume of −18 dB reads 0 VU at the default Reference Level
+  (`--defaults`).
 - **A Stereo Pair after Mono and back.** Both meters read the same, bit for bit,
   on every paired frame, on all four Types, whether the level fell or rose while
   the right one was hidden. v0.1.0 froze the hidden meter, and the same check
@@ -223,7 +243,9 @@ Not verified, and not pretended:
   Everything above is the offline harness driving the real plugin class in a
   headless GL context.
   How 31 controls across four groups present in Resolume's inspector is
-  untested.
+  untested, and so is hiding the ones the current Type and Standard cannot
+  reach (`--visible` checks the plugin's half; vectrix measured Arena honouring
+  it, needle has not).
 - **Three of the quoted figures came from background knowledge and were not
   checked against a document**: the PPM's "2 dB below steady for a 5 ms burst"
   (used in place of the looser "about 80 %" — they are the same requirement,

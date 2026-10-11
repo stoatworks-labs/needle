@@ -25,7 +25,9 @@
 	   depends on the host's window, its normalisation and its own headroom.
 	   Nothing here can discover that, so `Reference Level` names the dBFS the
 	   meter calls zero and `Sensitivity` trims it, and the README says the
-	   calibration is nominal.
+	   calibration is nominal. What CAN be chosen is which footing the level
+	   stands on, and after v0.1.1 it is Resolume's own -- see "The level"
+	   below.
 	3. **Where the bins sit in frequency.** The fleet assumes they are linear
 	   from 0 to Nyquist. That assumption has never been tested either -- **and
 	   this plugin does not need it to be true.**
@@ -39,6 +41,27 @@
 	is none of that here. So the fleet's untested assumption is one this plugin
 	is structurally immune to, which is a better answer than testing it would
 	have been.
+
+	## The level: an RMS over the bins, Resolume's footing
+
+	The level is the **root mean square over the bins** -- `sqrt( sum b^2 / n )`
+	-- which is exactly what the FFGL SDK's own `ffglqs::Audio::Update` calls the
+	"global volume ... between 0.0 and 1.0" (external/ffgl/source/lib/
+	ffglquickstart/FFGLAudio.cpp). Dividing by a constant does not touch the
+	Parseval argument above: the result still cannot depend on where the bins
+	sit in frequency. It only decides where 1.0 is: every bin at 1.0 reads
+	0 dBFS, and one bin of 1.0 on its own reads 20.log10(1/8) = -18.06 dBFS.
+
+	v0.1.0 and v0.1.1 took the root of the plain SUM, which is the same number
+	18.06 dB higher (the 8 is the root of 64), on the assumption that a
+	full-scale sine sums to 1.0 across the spectrum. The first report from a
+	real Resolume rig (needle#1, 2026-10-09) said the opposite: the needle sat
+	off the end of the scale until Reference Level was at its 0 dBFS stop,
+	which is the default plus the same 18 dB. So the SDK's footing is taken, and
+	the shipped -18 dBFS Reference puts programme at an SDK volume of -18 dB on
+	0 VU. That is a better-grounded guess, not a measurement: nobody has yet
+	logged what Resolume puts in the bins for a known tone. `ndtest --defaults`
+	holds the law to `ffglqs::Audio` itself, so the two cannot drift apart.
 
 	## What this is NOT
 
@@ -68,12 +91,13 @@ namespace needle::audio
 /// The number of bins the host is told to fill. Resolume's own figure.
 inline constexpr int kBins = 64;
 
-/// One amplitude out of one spectrum, on a 0..1 full-scale-ish footing.
+/// One amplitude out of one spectrum: the RMS over the bins, on the FFGL SDK's
+/// footing, where every bin at 1.0 reads 1.0 (see "The level", above).
 ///
 /// `power` selects the Bin Law: when the host sends magnitudes the result is
-/// `sqrt( sum b^2 )`, and when it sends power it is `sqrt( sum b )`. Both are
-/// the same quantity -- the square root of the total power -- read through the
-/// right assumption about what arrived.
+/// `sqrt( sum b^2 / n )`, and when it sends power it is `sqrt( sum b / n )`.
+/// Both are the same quantity -- the root of the mean power per bin -- read
+/// through the right assumption about what arrived.
 float LevelFromSpectrum( const float* bins, int count, bool power );
 
 } // namespace needle::audio

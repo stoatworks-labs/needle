@@ -30,7 +30,11 @@ mappings or a tolerance in the harness.
     depending on which way it came
   - `./build/ndtest --pair` — both meters of a Stereo Pair agree, bit for bit, after
     Count goes to Mono and back; its negative control is v0.1.0's frozen right meter
-  - `./build/ndtest --defaults` — Free agrees with Standard at the shipped defaults
+  - `./build/ndtest --defaults` — Free agrees with Standard at the shipped defaults; the
+    level law is the FFGL SDK's `ffglqs::Audio` volume, and an SDK volume of −18 dB reads 0 VU
+  - `./build/ndtest --free` — Free as trajectories: Overshoot exact for the faster direction and
+    a bound for the slower, Rise and Fall exact, no coasting past the programme. Fails on v0.1.1
+  - `./build/ndtest --visible` — the inspector hides what Type and Standard cannot reach
   - `./build/ndtest --names` — no name over 16 characters, none duplicated
 - Pixels (the only check that needs a rasteriser): `./build/ndtest --pixels`
 - Cost: `./build/ndtest --bench`
@@ -47,6 +51,16 @@ mappings or a tolerance in the harness.
 - **The textbook `ts ≈ 4/(ζωn)` is the wrong question.** It is when the
   *envelope* enters a 2 % band. Here it says 364 ms where the true first crossing
   of 99 % is 300 ms.
+- **The level is the RMS over the 64 bins, `sqrt( Σ b² / 64 )`** — the FFGL SDK's own volume.
+  v0.1.1 took the root of the SUM, 18.06 dB hot, and pinned on a real rig (needle#1). The harness
+  writes `--level` as every bin at that level, so `--level -18` is still 0 on every scale.
+- **Free picks its spring in `DriveMovement`, never by `u >= x`.** At rest or heading for the
+  target: the direction's own; carried past it: the stiffer, split at the turn. `u >= x` handed an
+  overshooting pointer the fall's weak spring and it coasted (11.6 % at the defaults).
+- **The VU has stops** at −0.02 and 1.035 (`kDialStopLow/High`), the drawing's old clamp.
+- **Hidden is not dead.** `ApplyVisibility` hides Rise/Fall (Standard on), Overshoot (Standard on,
+  or PPM/Bargraph), Peak Hold/Hold Decay (not Bargraph), Persistence (not Eye). Never hide Type or
+  Standard. Ids may move, names may not: compositions store names (vectrix's docs/NOTES.md).
 - **A VU scale is linear in VOLTAGE; a PPM scale is linear in dB.** That is why
   0 VU sits at 71 % of the arc and a BBC PPM's marks are evenly spaced.
   `ScaleFor()` is the one place that knows.
@@ -99,7 +113,8 @@ mappings or a tolerance in the harness.
   Everything on the Mac is the offline harness driving the real plugin class.
 - Windows in Resolume Arena: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device.
 - No real audio has reached it in a host; Resolume's 64-bin FFT mapping is
-  assumed (`Bin Law`), not measured.
+  assumed (`Bin Law`), not measured. The RMS footing (needle#1) is a better guess, not a number.
+- The control hiding (needle#1) has not been seen in Resolume; vectrix measured Arena honouring it.
 - The universal build has never run on an Intel Mac. Cost figures are
   Apple Silicon only.
 - No presets, no OpenFX port.

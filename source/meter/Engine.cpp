@@ -28,6 +28,43 @@ double Amp( double db )
 constexpr double kWarmTau = 4.0;
 } // namespace
 
+// See Engine.h for what this does and why.
+void DriveMovement( Movement& m, double h, double u, double zeta, double omegaUp, double omegaDown,
+					double deadBand )
+{
+	auto step = [ & ]( double dt, double omega ) {
+		m.Step( dt, u, zeta, omega, deadBand * omega * omega );
+	};
+
+	if( omegaUp == omegaDown )
+	{
+		step( h, omegaUp );
+		return;
+	}
+
+	const double toTarget = u - m.x;
+	if( !( m.v * toTarget < 0.0 ) )
+	{
+		// At rest, or heading for the target: the direction's own spring.
+		step( h, toTarget >= 0.0 ? omegaUp : omegaDown );
+		return;
+	}
+
+	// Carried past the target: brake on the stiffer spring.
+	const double   stiff  = std::max( omegaUp, omegaDown );
+	const Movement before = m;
+	step( h, stiff );
+	if( !( m.v * before.v < 0.0 ) )
+		return;
+
+	// It turned round inside the step. Redo it in two parts: the stiff spring
+	// up to the turn, then the direction's own from there.
+	const double turn = h * before.v / ( before.v - m.v );
+	m                 = before;
+	step( turn, stiff );
+	step( h - turn, ( u - m.x ) >= 0.0 ? omegaUp : omegaDown );
+}
+
 Scale ScaleFor( MeterType type )
 {
 	switch( type )
@@ -178,12 +215,30 @@ void Engine::StepAll( double h, const double* amplitudeRatio )
 		// The VU: a movement, driven by the deflection that level would settle
 		// at. Its target is linear in amplitude because its scale is.
 		{
-			const double u     = DeflectionFor( vuScale, a );
-			const double omega = ( u >= c.vu.x ) ? resolved_.vuOmegaUp : resolved_.vuOmegaDown;
-			// The friction is expressed as a dead band and converted here, so
-			// the band is the same fraction of full scale at any ballistics.
-			c.vu.Step( h, u, resolved_.vuZeta, omega,
-					   resolved_.frictionDeadBand * omega * omega );
+			const double u = DeflectionFor( vuScale, a );
+			// The friction is expressed as a dead band and converted per
+			// spring, so the band is the same fraction of full scale at any
+			// ballistics.
+			DriveMovement( c.vu, h, u, resolved_.vuZeta, resolved_.vuOmegaUp, resolved_.vuOmegaDown,
+						   resolved_.frictionDeadBand );
+
+			// The stops. A real pointer meets a pin a hair past each end of the
+			// scale and stays there, dead, until the drive pulls it off. Without
+			// them the model ran on past the end -- to 5.7 times full scale on a
+			// level 18 dB over 0 VU -- and the drawn needle sat pinned for a
+			// fifth of a second after the level had gone. Inelastic: the pin
+			// takes the pointer's speed. Only the VU has them: the PPM has no
+			// movement, and the eye's wings are meant to cross past closure.
+			if( c.vu.x > kDialStopHigh )
+			{
+				c.vu.x = kDialStopHigh;
+				c.vu.v = std::min( c.vu.v, 0.0 );
+			}
+			else if( c.vu.x < kDialStopLow )
+			{
+				c.vu.x = kDialStopLow;
+				c.vu.v = std::max( c.vu.v, 0.0 );
+			}
 		}
 
 		// The PPM and the bargraph share one detector, in the AMPLITUDE domain,
@@ -201,11 +256,10 @@ void Engine::StepAll( double h, const double* amplitudeRatio )
 		// The eye. Its own movement, because it follows a dB scale and the VU
 		// follows a voltage one, so one movement cannot serve both.
 		{
-			const double u     = DeflectionFor( eyeScale, a );
-			const double omega = ( u >= c.eye.movement.x ) ? resolved_.eyeOmegaUp
-														   : resolved_.eyeOmegaDown;
-			c.eye.Step( h, u, resolved_.eyeZeta, omega, resolved_.persistenceTau,
-						resolved_.warmTau, resolved_.frictionDeadBand * omega * omega );
+			const double u = DeflectionFor( eyeScale, a );
+			DriveMovement( c.eye.movement, h, u, resolved_.eyeZeta, resolved_.eyeOmegaUp,
+						   resolved_.eyeOmegaDown, resolved_.frictionDeadBand );
+			c.eye.Step( h, resolved_.persistenceTau, resolved_.warmTau );
 		}
 
 		// The hold bar follows the detector, in dB on the bargraph's scale.

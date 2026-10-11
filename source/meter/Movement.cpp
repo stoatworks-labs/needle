@@ -86,13 +86,10 @@ void Hold::Step( double h, double db_, double holdSeconds, double decayDbPerSeco
 		db = std::max( db_, db - decayDbPerSecond * h );
 }
 
-void Eye::Step( double h, double u, double zeta, double omegaN, double persistenceTau,
-				double warmTau, double friction )
+void Eye::Step( double h, double persistenceTau, double warmTau )
 {
 	if( h <= 0.0 )
 		return;
-
-	movement.Step( h, u, zeta, omegaN, friction );
 
 	// Phosphor persistence is a lag on what is SEEN, not on what the tube is
 	// doing: the target has already been excited, the glow is what is left of

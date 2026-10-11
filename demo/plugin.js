@@ -45,8 +45,10 @@
  * (one spectrum per frame is the plugin's input resolution too) and writes it
  * into 64 bins: a tone into one bin, pink noise spread as 1/f with the
  * frame-to-frame scatter a short FFT of noise has. The plugin's own level law
- * then runs on those bins — the square root of the sum over ALL of them, under
- * whichever Bin Law is selected — and everything downstream is the port.
+ * then runs on those bins — the RMS over ALL of them, the FFGL SDK's own
+ * "volume", under whichever Bin Law is selected — and everything downstream is
+ * the port. (Until needle#1 the law was the root of the SUM, 18 dB higher; a
+ * tone's bin here is written eight times — the root of 64 — larger to match.)
  *
  * **It is not the host's FFT.** Resolume's window, normalisation, headroom and
  * whether a bin is a magnitude or a power are unknown — `AGENTS.md` lists them as
@@ -677,9 +679,9 @@ class Eye {
   constructor() { this.movement = new Movement(); this.shown = 0.0; this.warm = 0.0; }
   reset() { this.movement.reset(); this.shown = 0.0; this.warm = 0.0; }
 
-  step(h, u, zeta, omegaN, persistenceTau, warmTau, friction = 0.0) {
+  /** The tube's half: the engine drives `movement` (driveMovement), then this. */
+  step(h, persistenceTau, warmTau) {
     if (h <= 0.0) return;
-    this.movement.step(h, u, zeta, omegaN, friction);
     const c = persistenceTau > 0.0 ? 1.0 - Math.exp(-h / persistenceTau) : 1.0;
     this.shown += (this.movement.x - this.shown) * c;
     this.warm += (1.0 - this.warm) * (1.0 - Math.exp(-h / Math.max(1e-6, warmTau)));
@@ -708,7 +710,39 @@ const kSilence = 1e-7;
 const kWarmTau = 4.0;
 const kMaxChannels = 2;
 
+const kDialStopLow = -0.02;
+const kDialStopHigh = 1.035;
+
 const Db = (amplitude) => 20.0 * Math.log10(Math.max(amplitude, kSilence));
+
+/**
+ * PORT — Engine.cpp's DriveMovement (needle#1). At rest or heading for the
+ * target: the direction's own spring. Carried past it: braked by the stiffer
+ * spring, the step split where it turns round. One spring (Standard): exactly
+ * Movement.step.
+ */
+function driveMovement(m, h, u, zeta, omegaUp, omegaDown, deadBand) {
+  const step = (dt, omega) => m.step(dt, u, zeta, omega, deadBand * omega * omega);
+  if (omegaUp === omegaDown) {
+    step(h, omegaUp);
+    return;
+  }
+  const toTarget = u - m.x;
+  if (!(m.v * toTarget < 0.0)) {
+    step(h, toTarget >= 0.0 ? omegaUp : omegaDown);
+    return;
+  }
+  const stiff = Math.max(omegaUp, omegaDown);
+  const bx = m.x;
+  const bv = m.v;
+  step(h, stiff);
+  if (!(m.v * bv < 0.0)) return;
+  const turn = h * bv / (bv - m.v);
+  m.x = bx;
+  m.v = bv;
+  step(turn, stiff);
+  step(h - turn, (u - m.x) >= 0.0 ? omegaUp : omegaDown);
+}
 const Amp = (db) => Math.pow(10.0, db / 20.0);
 
 function scaleFor(type) {
@@ -803,14 +837,21 @@ class Engine {
       const a = amplitudeRatio[i];
       {
         const u = deflectionFor(vuScale, a);
-        const omega = u >= c.vu.x ? r.vuOmegaUp : r.vuOmegaDown;
-        c.vu.step(h, u, r.vuZeta, omega, r.frictionDeadBand * omega * omega);
+        driveMovement(c.vu, h, u, r.vuZeta, r.vuOmegaUp, r.vuOmegaDown, r.frictionDeadBand);
+        // The stops: inelastic, VU only (needle#1).
+        if (c.vu.x > kDialStopHigh) {
+          c.vu.x = kDialStopHigh;
+          c.vu.v = Math.min(c.vu.v, 0.0);
+        } else if (c.vu.x < kDialStopLow) {
+          c.vu.x = kDialStopLow;
+          c.vu.v = Math.max(c.vu.v, 0.0);
+        }
       }
       c.ppm.step(h, a, r.ppmRiseTau, r.ppmFallTau);
       {
         const u = deflectionFor(eyeScale, a);
-        const omega = u >= c.eye.movement.x ? r.eyeOmegaUp : r.eyeOmegaDown;
-        c.eye.step(h, u, r.eyeZeta, omega, r.persistenceTau, r.warmTau, r.frictionDeadBand * omega * omega);
+        driveMovement(c.eye.movement, h, u, r.eyeZeta, r.eyeOmegaUp, r.eyeOmegaDown, r.frictionDeadBand);
+        c.eye.step(h, r.persistenceTau, r.warmTau);
       }
       c.hold.step(h, Db(c.ppm.x), r.holdSeconds, r.holdDecayDbPerSecond);
     }
@@ -952,15 +993,16 @@ function currentSettings(p) {
   };
 }
 
-/** PORT — Audio::LevelFromSpectrum. sqrt(sum b^2) for Magnitude, sqrt(sum b) for Power. */
+/** PORT — Audio::LevelFromSpectrum. The RMS over the bins: sqrt(sum b^2 / n) for Magnitude, sqrt(sum b / n) for Power. */
 function levelFromSpectrum(bins, power) {
+  if (bins.length === 0) return 0.0;
   let total = 0.0;
   for (let i = 0; i < bins.length; i += 1) {
     const b = bins[i];
     if (!(b > 0.0)) continue;
     total += power ? b : b * b;
   }
-  return f32(Math.sqrt(total));
+  return f32(Math.sqrt(total / bins.length));
 }
 
 // A VU scale as it is printed, and a BBC PPM's seven marks. From Needle.cpp.
@@ -1086,7 +1128,7 @@ function buildFrame(p, engine, width, height) {
       U.needleLen = U.arcRadius * 0.970;
       U.needleWidth = Math.max(3.0, S * 0.026);
 
-      const d = Math.min(Math.max(st.deflection, -0.02), 1.035);
+      const d = Math.min(Math.max(st.deflection, kDialStopLow), kDialStopHigh);
       U.needleAngle = (2.0 * d - 1.0) * U.arcHalfAngle;
 
       if (settings.type === MeterType.Vu) {
@@ -1394,14 +1436,17 @@ function mulberry32(seed) {
 function writeSpectrum(bins, signal, power, random) {
   bins.fill(0);
   if (!(power > 0)) return;
+  // The level law is the RMS over the bins, so a spectrum the plugin reads at
+  // `power` carries BINS times that in total.
+  const total = power * BINS;
   if (signal.shape === 'tone') {
-    bins[TEST_TONE_BIN] = f32(Math.sqrt(power));
+    bins[TEST_TONE_BIN] = f32(Math.sqrt(total));
     return;
   }
   for (let i = 0; i < BINS; i += 1) {
     // |X|^2 of complex Gaussian noise is exponential with the bin's mean power.
     const e = -Math.log(1 - random());
-    bins[i] = f32(Math.sqrt(power * PINK_WEIGHTS[i] * e));
+    bins[i] = f32(Math.sqrt(total * PINK_WEIGHTS[i] * e));
   }
 }
 
@@ -1577,10 +1622,10 @@ const PARAMS = [
   }),
   opt('binLaw', 'Bin Law', ['Magnitude', 'Power'], 0, 'Meter',
     'Whether a host bin is a magnitude or a power — genuinely unknown for Resolume, so it is a switch. This page writes its test spectrum as MAGNITUDES, so Magnitude reads the signal at the level it was generated at and Power shows what the other assumption does to the same numbers.'),
-  bool('standard', 'Standard', 1, 'Meter',
-    'On: every ballistic constant comes from the standards and Rise, Fall and Overshoot are not read at all. Off: Free, deliberately unphysical — a rise that differs from a fall is not a mass on a spring.'),
 
   // -- Ballistics ---------------------------------------------------------
+  bool('standard', 'Standard', 1, 'Ballistics',
+    'On: every ballistic constant comes from the standards and Rise, Fall and Overshoot are not read at all — in Resolume they are hidden. Off: Free, deliberately unphysical — a rise that differs from a fall is not a mass on a spring.'),
   std('rise', 'Rise', kRiseDefault, 'Ballistics', {
     display: (v) => dur(RiseSeconds(v)),
     hint: 'Free only. Time to 99 % of a rising step, 20 ms to 2 s. The default, 300 ms, is ANSI C16.5’s.',
@@ -1591,7 +1636,7 @@ const PARAMS = [
   }),
   std('overshoot', 'Overshoot', kOvershootDefault, 'Ballistics', {
     display: (v) => `${(OvershootFraction(v) * 100).toFixed(2)}%`,
-    hint: 'Free only. 0.1 % to 50 %, logarithmic; it sets the damping. The default, 1.25 %, is the middle of ANSI C16.5’s band.',
+    hint: 'Free only, VU and Magic Eye. 0.1 % to 50 %, logarithmic; it sets the damping, and a step in the faster of the two directions overshoots by exactly this. The default, 1.25 %, is the middle of ANSI C16.5’s band.',
   }),
   std('peakHold', 'Peak Hold', kPeakHoldDefault, 'Ballistics', {
     display: (v) => dur(PeakHoldSeconds(v)),

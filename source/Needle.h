@@ -89,6 +89,10 @@ public:
 	/// geometry in a `Frame` into somewhere to probe.
 	static void LocalToScreen( const Unit& unit, float lx, float ly, float& sx, float& sy );
 
+	/// Show only the controls the current Type and Standard can reach, and
+	/// tell the host when `raise` is set. See Controls.h, "Hidden is not dead".
+	void ApplyVisibility( bool raise );
+
 private:
 	int OptionIndex( unsigned int param, int count ) const;
 

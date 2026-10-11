@@ -17,7 +17,11 @@
 	    --pair        both meters of a Stereo Pair agree after Count goes to
 	                  Mono and back, with a negative control that freezes the
 	                  hidden one the way v0.1.0 did
-	    --defaults    Free agrees with Standard at the shipped defaults
+	    --defaults    Free agrees with Standard at the shipped defaults, and the
+	                  level law is the FFGL SDK's, 0 VU at the default Reference
+	    --free        Free's Overshoot, Rise and Fall hold whatever the other
+	                  two are, and a needle never coasts past its programme
+	    --visible     the inspector shows only what Type and Standard can reach
 	    --names       no parameter name over FFGL's 16 characters
 	    --font        print every glyph
 	    --list        the fleet's parameter listing, for tools/sweep.py
@@ -107,10 +111,13 @@
 	## The synthetic input
 
 	There is no host, so the spectrum is written straight into the buffer
-	parameter with `SetParamElementValue`: one bin carrying `10^(dB/20)` and the
-	rest zero. `LevelFromSpectrum` sums over every bin, so *which* bin is used
-	cannot matter -- which is the point being made in `Audio.h`, exercised here
-	rather than only asserted.
+	parameter with `SetParamElementValue`: **every bin carrying `10^(dB/20)`**,
+	so the level the plugin reads -- the RMS over the bins, the FFGL SDK's own
+	"volume" -- is exactly `dB`. `--level -18` is therefore programme at the
+	default Reference Level, 0 on every scale, as it always was. Until needle#1
+	the law summed the bins and this wrote one bin; `--defaults` now holds both
+	the law and its layout-independence (the same power in one bin reads the
+	same) against the SDK's `ffglqs::Audio`.
 */
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl3.h>
@@ -160,14 +167,24 @@ namespace
 {
 constexpr double kPi = 3.14159265358979323846;
 
-/// Which bin the synthetic spectrum goes in. Not zero and not the last, so a
-/// level that depended on the bin index would be visibly wrong rather than
-/// accidentally right.
-constexpr int kInjectBin = 11;
+/// The one bin `--defaults` puts a whole spectrum's power into, to show the
+/// layout cannot matter. Not zero and not the last, so a level that depended
+/// on the bin index would be visibly wrong rather than accidentally right.
+constexpr int kLoneBin = 11;
 
 double AmpFromDb( double db )
 {
 	return std::pow( 10.0, db / 20.0 );
+}
+
+/// Write a spectrum the plugin reads as `db` relative to its full scale:
+/// every bin at `10^(db/20)`, whose RMS over the bins is exactly that. -400 or
+/// below is silence, every bin zero.
+void WriteLevel( NeedlePlugin& plugin, double db )
+{
+	const float level = db <= -400.0 ? 0.0f : static_cast< float >( AmpFromDb( db ) );
+	for( int i = 0; i < audio::kBins; ++i )
+		plugin.SetParamElementValue( PT_AUDIO, static_cast< unsigned >( i ), level );
 }
 
 //---------------------------------------------------------------------------
@@ -398,13 +415,11 @@ struct Instance
 
 	void set( unsigned int id, float v ) { plugin.SetFloatParameter( id, v ); }
 
-	/// Write a synthetic spectrum carrying `db` relative to digital full scale.
+	/// Write a synthetic spectrum the plugin reads as `db`. See WriteLevel.
 	void inject( double db )
 	{
 		level = db <= -400.0 ? 0.0 : AmpFromDb( db );
-		for( int i = 0; i < audio::kBins; ++i )
-			plugin.SetParamElementValue( PT_AUDIO, static_cast< unsigned >( i ),
-										 i == kInjectBin ? static_cast< float >( level ) : 0.0f );
+		WriteLevel( plugin, db );
 	}
 
 	/// The lamp, the glass, the wear and the scale numbers are all drawn over
@@ -542,6 +557,33 @@ int runBallistics()
 	Check( std::fabs( steady - wanted ) < 1e-6,
 		   "0 VU settles at " + F( wanted, 6 ) + " of full deflection -- a VU scale is linear in "
 		   "VOLTAGE, so 0 sits at 71 % of the arc (" + F( steady, 6 ) + ")" );
+
+	// The stop (needle#1). Driven 24 dB past 0 VU, v0.1.1's movement ran on to
+	// eleven times full scale while the drawing clamped it, and the needle sat
+	// on the stop for 217 ms after the level had gone. A real pointer meets a
+	// pin: it never passes it, and comes off it as soon as the drive lets go.
+	// The ANSI figures above never reach it -- a 0 VU step peaks at 0.717 and
+	// the stop is at 1.035 -- and `--rate` still reads the same deflection.
+	{
+		Engine e;
+		e.SetSettings( settings );
+		const double hot[ 2 ]   = { AmpFromDb( settings.referenceDbfs + 24.0 ), AmpFromDb( settings.referenceDbfs + 24.0 ) };
+		const double quiet[ 2 ] = { 0.0, 0.0 };
+		double       most       = 0.0;
+		int          off        = -1;
+		for( int f = 0; f <= 240; ++f )
+		{
+			e.Frame( f / 60.0, f < 120 ? hot : quiet, 1 );
+			const double d = e.Channel( 0 ).deflection;
+			most           = std::max( most, d );
+			if( f >= 120 && off < 0 && d < kDialStopHigh )
+				off = f - 120;
+		}
+		Check( most <= kDialStopHigh, "24 dB over 0 VU the pointer rests on the stop at " + F( kDialStopHigh, 3 ) +
+										  " and never passes it (most " + F( most, 4 ) + ")" );
+		Check( off >= 0 && off <= 1, "and it comes off the stop within a frame of the level going (" +
+										 std::to_string( off ) + " frames)" );
+	}
 
 	std::printf( "\n  %s\n", failures == 0 ? "PASS" : "FAIL" );
 	return failures == 0 ? 0 : 1;
@@ -1056,10 +1098,7 @@ PairRig PluginPair( NeedlePlugin& plugin )
 		[ &plugin ]( double seconds, double db, int count, MeterType type ) {
 			plugin.SetFloatParameter( PT_TYPE, static_cast< float >( type ) );
 			plugin.SetFloatParameter( PT_COUNT, static_cast< float >( count - 1 ) );
-			const float level = db <= -400.0 ? 0.0f : static_cast< float >( AmpFromDb( db ) );
-			for( int i = 0; i < audio::kBins; ++i )
-				plugin.SetParamElementValue( PT_AUDIO, static_cast< unsigned >( i ),
-											 i == kInjectBin ? level : 0.0f );
+			WriteLevel( plugin, db );
 			plugin.AdvanceEngine( seconds );
 		},
 		[ &plugin ]( int channel ) -> const ChannelState& {
@@ -1263,6 +1302,508 @@ int runDefaults()
 
 	// And what the audio path reads, with nothing injected.
 	Check( plugin.InputLevel() == 0.0f, "with no host, every FFT bin is zero and the level is zero" );
+
+	// ---- the level law, and where the default puts it (needle#1) -----------
+	//
+	// The law is the RMS over the bins -- the FFGL SDK's own "volume" -- and
+	// it is held to the SDK's code here rather than to a transcription of it.
+	// v0.1.1 took the root of the SUM, 18.06 dB higher, and a real Resolume rig
+	// pinned the needle at the default Reference Level; every check below
+	// fails on that law, the first by 18 dB.
+	std::printf( "\n  the level law, against the FFGL SDK's ffglqs::Audio volume\n\n" );
+	{
+		std::vector< std::vector< float > > spectra;
+		spectra.emplace_back( audio::kBins, static_cast< float >( AmpFromDb( -18.0 ) ) );// uniform
+		{
+			std::vector< float > b( audio::kBins, 0.0f );// one bin carrying it all
+			b[ kLoneBin ] = 1.0f;
+			spectra.push_back( b );
+		}
+		{
+			std::vector< float > b( audio::kBins );// pink-ish, 1/sqrt(f)
+			for( int i = 0; i < audio::kBins; ++i )
+				b[ static_cast< size_t >( i ) ] = 0.3f / std::sqrt( static_cast< float >( i + 1 ) );
+			spectra.push_back( b );
+		}
+		{
+			std::vector< float > b( audio::kBins );// a scatter, from an integer hash
+			uint32_t x = 2463534242u;
+			for( int i = 0; i < audio::kBins; ++i )
+			{
+				x ^= x << 13;
+				x ^= x >> 17;
+				x ^= x << 5;
+				b[ static_cast< size_t >( i ) ] = static_cast< float >( x % 1000u ) / 1000.0f;
+			}
+			spectra.push_back( b );
+		}
+
+		// The SDK sums float squares into a float, so its own rounding is at
+		// most 64 ulps of the power, 3.8e-6 relative, which is 1.7e-5 dB of
+		// level. 1e-3 dB is fifty times that and eighteen thousand times
+		// smaller than the error this exists to catch.
+		double worst = 0.0;
+		for( const std::vector< float >& b : spectra )
+		{
+			ffglqs::Audio sdk;
+			sdk.SetGain( 0.0f );      // 0 dB; the class's own default gain is zero
+			sdk.SetSmoothness( 0.0f );// no lag: this frame's value
+			sdk.Update( b );
+			const double theirs = sdk.GetVolume();
+			const double ours   = audio::LevelFromSpectrum( b.data(), audio::kBins, false );
+			std::printf( "    SDK volume %s   level %s   (%s dB)\n", F( theirs, 7 ).c_str(), F( ours, 7 ).c_str(),
+						 F( 20.0 * std::log10( ours ), 3 ).c_str() );
+			worst = std::max( worst, std::fabs( 20.0 * std::log10( ours / theirs ) ) );
+		}
+		Check( worst < 1e-3, "the level is the SDK's volume, the RMS over the bins (worst " + F( worst, 6 ) +
+								 " dB over " + std::to_string( spectra.size() ) + " spectra)" );
+
+		// Layout cannot matter: the same power in one bin as spread over 64.
+		const std::vector< float >& spread = spectra[ 0 ];
+		std::vector< float >        lone( audio::kBins, 0.0f );
+		lone[ kLoneBin ] = spread[ 0 ] * std::sqrt( static_cast< float >( audio::kBins ) );
+		const double a1  = audio::LevelFromSpectrum( spread.data(), audio::kBins, false );
+		const double a2  = audio::LevelFromSpectrum( lone.data(), audio::kBins, false );
+		Check( std::fabs( 20.0 * std::log10( a1 / a2 ) ) < 1e-3,
+			   "the same power in one bin as spread over all 64 reads the same (" + F( 20.0 * std::log10( a1 ), 4 ) +
+				   " vs " + F( 20.0 * std::log10( a2 ), 4 ) + " dB) -- the layout cannot matter" );
+	}
+
+	// Through the plugin's own parameter list and frame path: programme at an
+	// SDK volume of -18 dB settles on 0 VU at the shipped Reference Level. The
+	// bins are floats, 6e-8 relative, so the deflection can be out by about
+	// 4e-8; three seconds leaves the movement e^-33 from its target. 1e-5 is a
+	// floor two hundred times above both and 0.005 % of the scale.
+	{
+		const double zero = DeflectionFor( ScaleFor( MeterType::Vu ), 1.0 );
+		auto settleAt     = []( NeedlePlugin& p, bool power ) {
+			p.ForceSecondsClock();
+			if( power )
+			{
+				// Power bins: each the square of the magnitude WriteLevel writes.
+				p.SetFloatParameter( PT_BIN_LAW, static_cast< float >( BinLaw::Power ) );
+				const float b = static_cast< float >( AmpFromDb( -18.0 ) * AmpFromDb( -18.0 ) );
+				for( int i = 0; i < audio::kBins; ++i )
+					p.SetParamElementValue( PT_AUDIO, static_cast< unsigned >( i ), b );
+			}
+			else
+				WriteLevel( p, -18.0 );
+			for( int f = 0; f <= 180; ++f )
+				p.AdvanceEngine( f / 60.0 );
+			return p.EngineState().Channel( 0 ).deflection;
+		};
+		NeedlePlugin magnitude;
+		NeedlePlugin power;
+		const double dm = settleAt( magnitude, false );
+		const double dp = settleAt( power, true );
+		Check( std::fabs( dm - zero ) < 1e-5, "every bin at an SDK volume of -18 dB reads 0 VU at the default "
+											  "Reference Level (" +
+												  F( dm, 6 ) + " of full deflection, 0 VU is " + F( zero, 6 ) + ")" );
+		Check( std::fabs( dp - zero ) < 1e-5,
+			   "and so do the same bins sent as power, read with Bin Law on Power (" + F( dp, 6 ) + ")" );
+
+		// What the two level controls can reach, said rather than checked:
+		// Reference -40..0 dBFS and Sensitivity +-12 dB put 0 VU anywhere from
+		// an SDK volume of -52 dB to +12 dB.
+		std::printf( "    0 VU is reachable for SDK volumes from %s to %s dB\n",
+					 F( ReferenceDbfs( 0.0f ) - TrimDb( 1.0f ), 1 ).c_str(),
+					 F( ReferenceDbfs( 1.0f ) - TrimDb( 0.0f ), 1 ).c_str() );
+	}
+
+	std::printf( "\n  %s\n", failures == 0 ? "PASS" : "FAIL" );
+	return failures == 0 ? 0 : 1;
+}
+
+//---------------------------------------------------------------------------
+// --free
+//
+// Free is a switched system -- one spring for the rise, another for the fall --
+// and v0.1.1 switched on the wrong thing: which side of its target the pointer
+// was on. A rising pointer that passed its target was handed the fall's weak
+// spring and coasted, so the Overshoot control stopped meaning the overshoot
+// as soon as Fall differed from Rise (11.6 % at the shipped defaults). These
+// are trajectory checks, because the constants were always right: `--defaults`
+// compared them and passed while the movement was wrong.
+//
+// Engine-rate checks drive `DriveMovement` -- the function the engine runs --
+// at `kEngineRate`, so the samples are the model's own steps. Frame-path
+// checks go through the plugin's parameter list at 60 fps.
+//---------------------------------------------------------------------------
+namespace
+{
+double Mp( double zeta )
+{
+	return std::exp( -kPi * zeta / std::sqrt( 1.0 - zeta * zeta ) );
+}
+
+struct StepResult
+{
+	double excursion = 0.0;///< past the target, as a fraction of the step
+	double t99       = -1.0;///< seconds to 99 % of the step
+	double stiff     = 0.0;///< the stiffer of the two natural frequencies
+};
+
+/// From rest at `from` (settled on the way there), step the drive to `to` and
+/// follow it for `seconds`: how far past `to` it swings, and when it reaches
+/// 99 % of the way.
+StepResult FreeStep( const Resolved& r, double from, double to, double seconds )
+{
+	const double h = 1.0 / kEngineRate;
+	Movement     m;
+	// Settle at `from` the way a meter would get there -- up from rest, over
+	// the rise's overshoot, and back down on the FALL's spring, which at 20 s
+	// takes minutes -- so whatever velocity is left over, a few 1e-15 per
+	// second of either sign, is in it. Ten minutes is the cap, and at it the
+	// slowest cases here are within 3e-12 of their target -- far inside
+	// anything the checks below can see.
+	for( long i = 0; i < static_cast< long >( 600.0 * kEngineRate ); ++i )
+	{
+		DriveMovement( m, h, from, r.vuZeta, r.vuOmegaUp, r.vuOmegaDown, 0.0 );
+		if( std::fabs( m.x - from ) < 1e-13 && std::fabs( m.v ) < 1e-12 )
+			break;
+	}
+
+	StepResult out;
+	out.stiff        = std::max( r.vuOmegaUp, r.vuOmegaDown );
+	const double dir = to > from ? 1.0 : -1.0;
+	const double at  = from + 0.99 * ( to - from );
+	double       previous = m.x;
+	double       extreme  = to;
+	for( long i = 1; i <= static_cast< long >( seconds * kEngineRate ); ++i )
+	{
+		DriveMovement( m, h, to, r.vuZeta, r.vuOmegaUp, r.vuOmegaDown, 0.0 );
+		if( out.t99 < 0.0 && ( m.x - at ) * dir >= 0.0 )
+			out.t99 = ( static_cast< double >( i - 1 ) + ( at - previous ) / ( m.x - previous ) ) * h;
+		previous = m.x;
+		if( ( m.x - extreme ) * dir > 0.0 )
+			extreme = m.x;
+	}
+	out.excursion = ( extreme - to ) * dir / std::fabs( to - from );
+	return out;
+}
+} // namespace
+
+int runFree()
+{
+	std::printf( "Free: Rise, Fall and Overshoot mean what they say, whatever the other two are\n\n" );
+
+	const double h = 1.0 / kEngineRate;
+
+	// ---- engine rate: a matrix of Rise, Fall and Overshoot -------------------
+	//
+	// The sampled extreme misses the true one by at most half the curvature
+	// there times a step squared, and the curvature at an extreme is the
+	// stiff spring's pull, omega^2 times the excursion. As a fraction of the
+	// step that is omega^2 . Mp . h^2 -- 1e-7 at the defaults, 7e-4 at a 20 ms
+	// Rise and 40 % -- so the allowance is computed per case, doubled, plus a
+	// 1e-9 floor for RK4. The sample can only fall SHORT of the true peak, so
+	// "at most the Overshoot" needs only the floor.
+	//
+	// The 99 % times are interpolated linearly between two steps on a curve
+	// that is nearly straight there; 2 us is far above that error and far
+	// below anything a control could be confused for.
+	struct Case
+	{
+		double rise, fall;
+	};
+	const Case   cases[]      = { { 0.300, 2.800 }, { 0.020, 20.0 }, { 0.050, 0.300 }, { 0.300, 0.300 },
+								  { 2.000, 0.050 }, { 1.000, 0.100 } };
+	const double overshoots[] = { 0.0125, 0.10, 0.40 };
+	const double top          = DeflectionFor( ScaleFor( MeterType::Vu ), 1.0 );// 0 VU
+	const double low          = top * AmpFromDb( -12.0 );                     // -12 dB under it
+
+	std::printf( "  %-8s %-8s %-6s | %-28s | %-28s\n", "rise", "fall", "Mp", "rising step: over / 99 %",
+				 "falling step: under / 99 %" );
+	int bad = 0;
+	for( const Case& c : cases )
+		for( double over : overshoots )
+		{
+			Settings s;
+			s.standard    = false;
+			s.riseSeconds = c.rise;
+			s.fallSeconds = c.fall;
+			s.overshoot   = over;
+			const Resolved r  = Resolve( s );
+			const double   mp = Mp( r.vuZeta );
+
+			const StepResult up   = FreeStep( r, low, top, 6.0 * c.rise + 1.0 );
+			const StepResult down = FreeStep( r, top, low, 6.0 * c.fall + 1.0 );
+			const double     tol  = 2.0 * up.stiff * up.stiff * mp * h * h + 1e-9;
+
+			auto judge = [ & ]( const StepResult& x, double own, double other, double seconds ) {
+				// Exactly the Overshoot when this direction is the stiffer
+				// (its time the shorter), never more than it otherwise.
+				const bool exact = own <= other;
+				const bool okEx  = exact ? std::fabs( x.excursion - mp ) <= tol : x.excursion <= mp + 1e-9;
+				const bool okT   = std::fabs( x.t99 - seconds ) <= 2e-6;
+				return okEx && okT;
+			};
+			const bool okUp   = judge( up, c.rise, c.fall, c.rise );
+			const bool okDown = judge( down, c.fall, c.rise, c.fall );
+			std::printf( "  %-8s %-8s %-6s | %7s%%%s  %9s s %s | %7s%%%s  %9s s %s\n", F( c.rise, 3 ).c_str(),
+						 F( c.fall, 3 ).c_str(), F( 100.0 * over, 2 ).c_str(), F( 100.0 * up.excursion, 4 ).c_str(),
+						 c.rise <= c.fall ? "=" : "<", F( up.t99, 6 ).c_str(), okUp ? "ok  " : "FAIL",
+						 F( 100.0 * down.excursion, 4 ).c_str(), c.fall <= c.rise ? "=" : "<", F( down.t99, 6 ).c_str(),
+						 okDown ? "ok  " : "FAIL" );
+			bad += okUp ? 0 : 1;
+			bad += okDown ? 0 : 1;
+		}
+	std::printf( "  ('=' the swing must equal the Overshoot, '<' it may not exceed it)\n\n" );
+	Check( bad == 0, "every step overshoots by exactly the Overshoot when its own direction is the faster, "
+					 "never by more, and reaches 99 % in exactly its own Rise or Fall (" +
+						 std::to_string( bad ) + " of " + std::to_string( 2 * 6 * 3 ) + " steps wrong)" );
+
+	// ---- a beat during a slow fall is caught at once -----------------------
+	//
+	// The other half of the old rule, which it got right and a naive "go by
+	// the velocity" would not: with Rise 20 ms and Fall 20 s the pointer is
+	// still sliding down when the next beat arrives, and the fall's spring
+	// would take seconds to turn it round. It must reach 99 % of the new step
+	// within its Rise, plus the instant it takes the stiff spring to stop it.
+	{
+		Settings s;
+		s.standard    = false;
+		s.riseSeconds = 0.020;
+		s.fallSeconds = 20.0;
+		const Resolved r = Resolve( s );
+		Movement       m;
+		for( long i = 0; i < static_cast< long >( 1.0 * kEngineRate ); ++i )
+			DriveMovement( m, h, top, r.vuZeta, r.vuOmegaUp, r.vuOmegaDown, 0.0 );
+		for( long i = 0; i < static_cast< long >( 1.0 * kEngineRate ); ++i )
+			DriveMovement( m, h, 0.0, r.vuZeta, r.vuOmegaUp, r.vuOmegaDown, 0.0 );
+		const double from = m.x;
+		const double vel  = m.v;
+		const double at   = from + 0.99 * ( top - from );
+		double       t99  = -1.0;
+		for( long i = 1; i <= static_cast< long >( 1.0 * kEngineRate ) && t99 < 0.0; ++i )
+		{
+			DriveMovement( m, h, top, r.vuZeta, r.vuOmegaUp, r.vuOmegaDown, 0.0 );
+			if( m.x >= at )
+				t99 = static_cast< double >( i ) * h;
+		}
+		Check( vel < 0.0 && t99 > 0.0 && t99 <= 0.020 * 1.05,
+			   "a beat arriving while a 20 s fall is still sliding (at " + F( vel, 4 ) +
+				   " per second) reaches 99 % in " + F( t99 * 1000.0, 2 ) + " ms, within the 20 ms Rise + 5 %" );
+	}
+
+	// ---- Standard is untouched ---------------------------------------------
+	//
+	// One spring, so DriveMovement must BE Movement::Step -- the ANSI figures
+	// are measured on the latter. Bit for bit, both state variables, every
+	// step of four seconds through a step up and a step down.
+	{
+		Settings s;
+		const Resolved r = Resolve( s );
+		Movement       a, b;
+		bool           same = true;
+		for( long i = 0; i < static_cast< long >( 4.0 * kEngineRate ); ++i )
+		{
+			const double u = i < static_cast< long >( 2.0 * kEngineRate ) ? 1.0 : 0.1;
+			a.Step( h, u, r.vuZeta, r.vuOmegaUp );
+			DriveMovement( b, h, u, r.vuZeta, r.vuOmegaUp, r.vuOmegaDown, 0.0 );
+			same = same && a.x == b.x && a.v == b.v;
+		}
+		Check( same, "on Standard the engine's step is Movement::Step, bit for bit, at every one of " +
+						 std::to_string( static_cast< long >( 4.0 * kEngineRate ) ) + " steps" );
+	}
+
+	// ---- through the plugin, at 60 fps --------------------------------------
+	//
+	// The parameter list, the spectrum, AdvanceEngine: what a host drives. At
+	// a frame of 16.7 ms the sampled peak can miss the true one by
+	// omega^2 . Mp . (1/60)^2 of the step -- 0.06 % at the defaults -- computed
+	// here per case and doubled.
+	//
+	// Each run first holds the signal's opening level for `settle` seconds, so
+	// what is measured is the programme and not the meter's climb from rest.
+	auto plugin = []( MeterType type, float riseSlider, float fallSlider, float overSlider,
+					  const std::function< double( double ) >& db, double settle, double seconds,
+					  std::vector< double >& trace, Resolved& r ) {
+		NeedlePlugin p;
+		p.ForceSecondsClock();
+		p.SetFloatParameter( PT_TYPE, static_cast< float >( type ) );
+		p.SetFloatParameter( PT_STANDARD, 0.0f );
+		p.SetFloatParameter( PT_PERSISTENCE, 0.0f );// the eye's shown = its movement
+		p.SetFloatParameter( PT_RISE, riseSlider );
+		p.SetFloatParameter( PT_FALL, fallSlider );
+		p.SetFloatParameter( PT_OVERSHOOT, overSlider );
+		r = Resolve( p.CurrentSettings() );
+		const int hold   = static_cast< int >( std::lround( settle * 60.0 ) );
+		const int frames = static_cast< int >( std::lround( seconds * 60.0 ) );
+		for( int f = 0; f <= hold + frames; ++f )
+		{
+			WriteLevel( p, db( f < hold ? 0.0 : ( f - hold ) / 60.0 ) );
+			p.AdvanceEngine( f / 60.0 );
+			if( f >= hold )
+				trace.push_back( p.EngineState().Channel( 0 ).deflection );
+		}
+	};
+
+	// The shipped defaults, Standard off: a step to 0 VU on the VU, and a
+	// step from -30 to -10 dB on the eye (its scale is linear in dB, 0 dB
+	// shut, so that is 0.25 to 0.75 of its travel).
+	for( MeterType type : { MeterType::Vu, MeterType::Eye } )
+	{
+		const bool vu = type == MeterType::Vu;
+		std::vector< double > trace;
+		Resolved              r;
+		plugin( type, kRiseDefault, kFallDefault, kOvershootDefault,
+				[ vu ]( double t ) { return t < 2.0 ? ( vu ? -400.0 : -18.0 - 30.0 ) : ( vu ? -18.0 : -18.0 - 10.0 ); },
+				0.0, 6.0, trace, r );
+		const double from = vu ? 0.0 : 0.25;
+		const double to   = vu ? top : 0.75;
+		double       peak = 0.0;
+		for( size_t i = 121; i < trace.size(); ++i )
+			peak = std::max( peak, trace[ i ] );
+		const double over = ( peak - to ) / ( to - from );
+		const double mp   = Mp( r.vuZeta );
+		const double tol  = 2.0 * r.vuOmegaUp * r.vuOmegaUp * mp / ( 60.0 * 60.0 );
+		Check( over <= mp + 1e-9 && over >= mp - tol,
+			   std::string( vu ? "VU" : "magic eye" ) + ", Free at the shipped defaults (Rise 300 ms, Fall 2.8 s): a step overshoots " +
+				   F( 100.0 * over, 4 ) + " %, the Overshoot is " + F( 100.0 * mp, 4 ) + " % (allowed -" +
+				   F( 100.0 * tol, 4 ) + " for the frame grid)" );
+	}
+
+	// Programme, not steps: a 125 BPM kick, 60 ms at 0 VU and -12 dB between,
+	// for six seconds. However the two springs are set, the needle must never
+	// read more than the programme's loudest moment by more than its
+	// Overshoot can carry it -- for a linear movement driven anyhow between
+	// two levels that is 2.Mp/(1-Mp) of the gap, the integral of the impulse
+	// response's absolute value less one -- nor less than its quietest by the
+	// same. v0.1.1 read 0 VU programme at +1.5 VU with Rise 2 s and Fall 20 s.
+	{
+		struct Prog
+		{
+			float rise, fall;
+			const char* what;
+		};
+		const Prog progs[] = { { 1.0f, 1.0f, "Rise 2 s, Fall 20 s" }, { kRiseDefault, kFallDefault, "the shipped defaults" },
+							   { 0.0f, 1.0f, "Rise 20 ms, Fall 20 s" }, { 1.0f, 0.0f, "Rise 2 s, Fall 50 ms" } };
+		for( const Prog& g : progs )
+			for( int inverted = 0; inverted < 2; ++inverted )
+			{
+				std::vector< double > trace;
+				Resolved              r;
+				// Opening on a beat's far side: the programme starts 0.1 s
+				// into a bar, where both versions sit at their usual level.
+				plugin( MeterType::Vu, g.rise, g.fall, kOvershootDefault,
+						[ inverted ]( double t ) {
+							const bool beat = std::fmod( t + 0.1, 60.0 / 125.0 ) < 0.060;
+							return ( beat != ( inverted != 0 ) ) ? -18.0 : -30.0;
+						},
+						30.0, 6.0, trace, r );
+				const double mp    = Mp( r.vuZeta );
+				const double reach = 2.0 * mp / ( 1.0 - mp ) * ( top - low ) + 1e-9;
+				double       hi = -1.0, lo = 2.0;
+				for( size_t i = 0; i < trace.size(); ++i )
+				{
+					hi = std::max( hi, trace[ i ] );
+					lo = std::min( lo, trace[ i ] );
+				}
+				Check( hi <= top + reach && lo >= low - reach,
+					   std::string( "programme of " ) + ( inverted ? "short dips" : "short beats" ) + ", " + g.what +
+						   ": the needle stays within " + F( low - reach, 4 ) + ".." + F( top + reach, 4 ) + " (read " +
+						   F( lo, 4 ) + ".." + F( hi, 4 ) + ")" );
+			}
+	}
+
+	std::printf( "\n  %s\n", failures == 0 ? "PASS" : "FAIL" );
+	return failures == 0 ? 0 : 1;
+}
+
+//---------------------------------------------------------------------------
+// --visible
+//
+// A Ballistics group of five sliders that did nothing on the default VU was
+// needle#1's second complaint. The inspector now shows only what the current
+// Type and Standard can reach. Resolume honours SetParamVisibility live when
+// the plugin raises FF_EVENT_FLAG_VISIBILITY -- measured on Arena by vectrix,
+// not here -- so what is checked is the plugin's half: the flags, the events,
+// and that a hidden control still holds its value.
+//---------------------------------------------------------------------------
+int runVisible()
+{
+	std::printf( "the inspector shows what the settings can reach\n\n" );
+
+	const unsigned int ruled[] = { PT_RISE, PT_FALL, PT_OVERSHOOT, PT_PEAK_HOLD, PT_HOLD_DECAY, PT_PERSISTENCE };
+	auto expected = []( unsigned int id, MeterType type, bool standard ) {
+		const bool movement = type == MeterType::Vu || type == MeterType::Eye;
+		switch( id )
+		{
+		case PT_RISE:
+		case PT_FALL: return !standard;
+		case PT_OVERSHOOT: return !standard && movement;
+		case PT_PEAK_HOLD:
+		case PT_HOLD_DECAY: return type == MeterType::Bargraph;
+		case PT_PERSISTENCE: return type == MeterType::Eye;
+		default: return true;
+		}
+	};
+
+	{
+		NeedlePlugin p;
+		bool         ok = true;
+		for( unsigned int id = 0; id < PT_COUNT_; ++id )
+			ok = ok && ( p.GetParamVisibility( id ) != 0 ) == expected( id, MeterType::Vu, true );
+		Check( ok, "out of the box (VU, Standard) Rise, Fall, Overshoot, Peak Hold, Hold Decay and "
+				   "Persistence are hidden, and nothing else is" );
+		Check( p.GetNumPendingParamEvents() == 0, "and construction raises no events -- the host reads the "
+												  "surface it was born with" );
+	}
+
+	// Every Type, both settings of Standard, reached through SetFloatParameter
+	// as a host reaches them.
+	{
+		NeedlePlugin p;
+		int          wrong = 0, silent = 0;
+		for( int standard = 1; standard >= 0; --standard )
+			for( int t = 0; t < kMeterTypeCount; ++t )
+			{
+				ParamEventStruct events[ PT_COUNT_ ];
+				p.ConsumeParamEvents( events, PT_COUNT_ );// drop the last round's
+				p.SetFloatParameter( PT_STANDARD, static_cast< float >( standard ) );
+				p.SetFloatParameter( PT_TYPE, static_cast< float >( t ) );
+				const FFUInt32 n = p.ConsumeParamEvents( events, PT_COUNT_ );
+				for( unsigned int id = 0; id < PT_COUNT_; ++id )
+					if( ( p.GetParamVisibility( id ) != 0 ) != expected( id, static_cast< MeterType >( t ), standard != 0 ) )
+						++wrong;
+				for( unsigned int id : ruled )
+				{
+					bool raised = false;
+					for( FFUInt32 e = 0; e < n; ++e )
+						raised = raised || ( events[ e ].ParameterNumber == id &&
+											 ( events[ e ].eventFlags & FF_EVENT_FLAG_VISIBILITY ) != 0 );
+					silent += raised ? 0 : 1;
+				}
+				if( p.GetParamVisibility( PT_STANDARD ) == 0 || p.GetParamVisibility( PT_TYPE ) == 0 )
+					++wrong;
+			}
+		Check( wrong == 0, "on all four Types, Standard on and off: every control shown exactly where it acts, "
+						   "and Standard and Type never hidden (" + std::to_string( wrong ) + " wrong)" );
+		Check( silent == 0, "every change of Type or Standard raises FF_EVENT_FLAG_VISIBILITY for the "
+							"controls it rules (" + std::to_string( silent ) + " missing)" );
+	}
+
+	// Hidden is not dead: a value set while hidden is kept, and read the
+	// moment the control can act again.
+	{
+		NeedlePlugin p;
+		p.SetFloatParameter( PT_RISE, 1.0f );
+		const bool hidden = p.GetParamVisibility( PT_RISE ) == 0;
+		p.SetFloatParameter( PT_STANDARD, 0.0f );
+		const Settings s = p.CurrentSettings();
+		Check( hidden && std::fabs( s.riseSeconds - 2.0 ) < 1e-4 && p.GetParamVisibility( PT_RISE ) != 0,
+			   "a Rise set while hidden is kept, and is the rise the moment Standard goes off (" +
+				   F( s.riseSeconds, 4 ) + " s)" );
+	}
+
+	// And the group it all hangs off: Standard heads Ballistics now.
+	{
+		NeedlePlugin p;
+		Check( p.GetParamGroup( PT_STANDARD ) == std::string( "Ballistics" ) &&
+				   p.GetParamGroup( PT_BIN_LAW ) == std::string( "Meter" ) && PT_STANDARD + 1 == PT_RISE,
+			   "Standard is the first control of the Ballistics group, directly above Rise" );
+	}
 
 	std::printf( "\n  %s\n", failures == 0 ? "PASS" : "FAIL" );
 	return failures == 0 ? 0 : 1;
@@ -2091,6 +2632,10 @@ int main( int argc, char** argv )
 			return runPair();
 		if( arg == "--defaults" )
 			return runDefaults();
+		if( arg == "--free" )
+			return runFree();
+		if( arg == "--visible" )
+			return runVisible();
 		if( arg == "--names" )
 			return runNames();
 		if( arg == "--list" )
@@ -2153,8 +2698,8 @@ int main( int argc, char** argv )
 
 	std::printf(
 		"usage: ndtest --ballistics | --ppm | --steps | --eye | --prime | --rate\n"
-		"              --friction | --pair | --defaults | --names | --list | --font\n"
-		"              --pixels | --bench\n"
+		"              --friction | --pair | --defaults | --free | --visible | --names\n"
+		"              --list | --font | --pixels | --bench\n"
 		"       ndtest --out f.png [--size WxH] [--frames N] [--level dBFS]\n"
 		"              [--burst MS] [--set Name=value ...]\n"
 		"       ndtest --pipe [--size WxH | --width W --height H] [--fps N] [--frames N]\n"

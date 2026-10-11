@@ -25,7 +25,10 @@ float LevelFromSpectrum( const float* bins, int count, bool power )
 					   : static_cast< double >( b ) * static_cast< double >( b );
 	}
 
-	return static_cast< float >( std::sqrt( total ) );
+	// The MEAN over the bins, not the sum: the FFGL SDK's own volume, which
+	// `ndtest --defaults` holds this to. The sum read 18.06 dB hot on a real
+	// Resolume rig -- see "The level" in Audio.h.
+	return static_cast< float >( std::sqrt( total / static_cast< double >( count ) ) );
 }
 
 } // namespace needle::audio

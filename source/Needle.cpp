@@ -127,19 +127,20 @@ NeedlePlugin::NeedlePlugin()
 	standard( PT_REFERENCE, "Reference Level", kReferenceDefault );
 	standard( PT_SENSITIVITY, "Sensitivity", kSensitivityDefault );
 	option( PT_BIN_LAW, "Bin Law", { "Magnitude", "Power" }, 0.0f );
-	boolean( PT_STANDARD, "Standard", true );
-	group( PT_TYPE, PT_STANDARD, "Meter" );
+	group( PT_TYPE, PT_BIN_LAW, "Meter" );
 
 	// -- Ballistics ------------------------------------------------------------
+	// Standard first: it decides whether the next three are shown at all.
 	// Every default here is the value at which Free agrees with Standard for
 	// the quantity it is named after (Rise and Overshoot: the VU; Fall: the
 	// PPM). Not a no-op for the VU's fall or the PPM's rise -- see Controls.h.
+	boolean( PT_STANDARD, "Standard", true );
 	standard( PT_RISE, "Rise", kRiseDefault );
 	standard( PT_FALL, "Fall", kFallDefault );
 	standard( PT_OVERSHOOT, "Overshoot", kOvershootDefault );
 	standard( PT_PEAK_HOLD, "Peak Hold", kPeakHoldDefault );
 	standard( PT_HOLD_DECAY, "Hold Decay", kHoldDecayDefault );
-	group( PT_RISE, PT_HOLD_DECAY, "Ballistics" );
+	group( PT_STANDARD, PT_HOLD_DECAY, "Ballistics" );
 
 	// -- Look ------------------------------------------------------------------
 	colour( PT_FACE_R, "Face", 0.93f, 0.90f, 0.79f );
@@ -178,7 +179,47 @@ NeedlePlugin::NeedlePlugin()
 	}
 	group( PT_ABOUT_TEXT, PT_COUNT_ - 1, "About" );
 
+	// Hidden from the start, without raising events: the host reads the
+	// surface after construction, and vectrix (docs/NOTES.md there) measured
+	// Arena honouring a construction-time hide.
+	ApplyVisibility( false );
+
 	mEngine.SetSettings( CurrentSettings() );
+}
+
+void NeedlePlugin::ApplyVisibility( bool raise )
+{
+	// Only what can reach the picture on the current settings is shown. Each
+	// rule is what the engine and BuildFrame actually read:
+	//
+	//   Rise, Fall    Free only -- Resolve() does not read them on Standard.
+	//   Overshoot     Free, on the VU and the eye: the PPM and the bargraph
+	//                 share a detector, which has no damping to set.
+	//   Peak Hold,    the bargraph: only its branch of BuildFrame draws the
+	//   Hold Decay    hold bar.
+	//   Persistence   the magic eye's phosphor.
+	//
+	// Standard and Type themselves are never hidden: hiding the control that
+	// brings a thing back leaves no way back (vectrix's rule). That is also
+	// why Standard heads the Ballistics group -- on Standard the group is that
+	// one switch, which says where the rest went.
+	const MeterType type     = static_cast< MeterType >( OptionIndex( PT_TYPE, kMeterTypeCount ) );
+	const bool      free_    = !Bool( mParams[ PT_STANDARD ] );
+	const bool      movement = type == MeterType::Vu || type == MeterType::Eye;
+
+	auto show = [ & ]( unsigned int id, bool visible ) {
+		SetParamVisibility( id, visible, false );
+		// Raised whether or not it changed, as vectrix does: Resolume needs
+		// the event to repaint the panel, and a spare one costs nothing.
+		if( raise )
+			RaiseParamEvent( id, FF_EVENT_FLAG_VISIBILITY );
+	};
+	show( PT_RISE, free_ );
+	show( PT_FALL, free_ );
+	show( PT_OVERSHOOT, free_ && movement );
+	show( PT_PEAK_HOLD, type == MeterType::Bargraph );
+	show( PT_HOLD_DECAY, type == MeterType::Bargraph );
+	show( PT_PERSISTENCE, type == MeterType::Eye );
 }
 
 FFResult NeedlePlugin::InitGL( const FFGLViewportStruct* vp )
@@ -238,6 +279,10 @@ FFResult NeedlePlugin::SetFloatParameter( unsigned int index, float value )
 	if( index >= PT_ABOUT_TEXT )
 		return stoatworks::about::handleParam( index - PT_ABOUT_TEXT, value ) ? FF_SUCCESS : FF_FAIL;
 	mParams[ index ] = value;
+
+	// Type and Standard decide what the inspector is even shown.
+	if( index == PT_TYPE || index == PT_STANDARD )
+		ApplyVisibility( true );
 	return FF_SUCCESS;
 }
 
@@ -460,7 +505,7 @@ Frame NeedlePlugin::BuildFrame( int width, int height ) const
 			// A needle that has run out of scale rests on its stop, a hair past
 			// the last mark. It does not leave the face and it does not stop
 			// exactly on the mark, because neither does a real one.
-			const double d = std::min( std::max( st.deflection, -0.02 ), 1.035 );
+			const double d = std::min( std::max( st.deflection, kDialStopLow ), kDialStopHigh );
 			U.needleAngle  = static_cast< float >( ( 2.0 * d - 1.0 ) * U.arcHalfAngle );
 
 			if( settings.type == MeterType::Vu )

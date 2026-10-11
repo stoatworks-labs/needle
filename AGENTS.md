@@ -38,6 +38,26 @@ is Apple Silicon only. There are no factory presets and no OpenFX port.
 The browser demo went live on 2026-09-24 at
 https://needle-demo.stoatworks-labs.com — see "The browser demo", below.
 
+**After v0.1.1, unreleased (needle#1, 2026-10-11).** The first report from a
+real Resolume rig (VJPandaAU) said the needle pinned at the default Reference
+Level and the Ballistics controls did nothing. Both were real, and three changes
+answer them:
+
+- the level law is now the **RMS over the bins** (the FFGL SDK's own volume),
+  not the root of the sum, which read 18.06 dB hot — see "Which audio input is
+  read";
+- **Free switched springs on the wrong variable**, so Overshoot stopped meaning
+  the overshoot whenever Fall differed from Rise (11.6 % at the shipped defaults,
+  83 % at Fall 20 s); the VU now has **stops**; and
+- the inspector **hides** what the current Type and Standard cannot reach, with
+  Standard moved to head the Ballistics group (id unchanged).
+
+`--defaults`, `--free`, `--visible` and two new `--ballistics` checks hold
+them, and every one of them fails on v0.1.1's rule (checked by rebuilding with
+each old rule put back). All of `tools/verify.sh` passes. **None of it has been
+in Resolume**: the calibration is a better-grounded guess, not a measurement, and
+the hiding is vectrix's Arena result, not needle's.
+
 ## The one idea
 
 **The movement is not a free choice.**
@@ -113,13 +133,28 @@ parameter, no peak parameter and no sample stream.
 
 `source/Audio.h` carries the long version. The short version:
 
-- **The level is the square root of the sum over ALL 64 bins.** The spec warns
+- **The level is the RMS over ALL 64 bins**, `sqrt( Σ b² / 64 )`. The spec warns
   that the fleet assumes those bins are linear 0→Nyquist and nobody has measured
   it. That assumption is not made here and does not need to be: by Parseval, a
   sum over every bin is the signal's power however the bins are laid out in
   frequency. Reorder them, warp them, space them logarithmically — the answer is
   the same. Only something that weighted bins against one another would care,
-  and there is nothing like that in this plugin.
+  and there is nothing like that in this plugin. Dividing by 64 changes none of
+  that; it only decides where 1.0 is.
+- **Why the mean and not the sum (needle#1).** v0.1.0–v0.1.1 took the root of the
+  SUM, on the assumption that a full-scale sine sums to 1.0 across the
+  spectrum. That is 20·log10(√64) = **18.06 dB** above the RMS, and the first
+  real rig pinned the needle at the default −18 dBFS until Reference Level was at
+  its 0 dBFS stop — the default plus the same 18 dB. The FFGL SDK's own
+  `ffglqs::Audio::Update` (external/ffgl/source/lib/ffglquickstart/FFGLAudio.cpp)
+  takes `sqrt( Σ b² / n )` and calls it the volume "between 0.0 and 1.0", so the
+  plugin now stands on that footing and the −18 dBFS default puts an SDK volume
+  of −18 dB on 0 VU. `--defaults` holds the law to `ffglqs::Audio` itself.
+  **The ranges were not widened**, because they did not need to be and changing
+  one remaps every saved composition: Reference −40..0 and Sensitivity ±12 still
+  put 0 VU anywhere from an SDK volume of −52 dB to +12 dB, which covers the
+  SDK's footing (programme around −18) and a Parseval-normalised one (a
+  −18 dBFS tone in one bin reads −36 now) with room either side.
 - **Whether a bin is a magnitude or a power is genuinely unknown**, and the
   fleet disagrees with itself about it (regauss takes the square root of each
   bin; spasis does not). So it is a control, `Bin Law`, defaulting to Magnitude.
@@ -199,9 +234,9 @@ listed with the reasoning for its tolerance, and the question asked of each is
 the same: *could this pass here and fail on a GPU-less runner, or at a different
 size?*
 
-**The structural answer, first.** Nine of the eleven check groups open **no GL
+**The structural answer, first.** Every check group but `--pixels` opens **no GL
 context at all** — `--ballistics`, `--ppm`, `--steps`, `--eye`, `--prime`,
-`--rate`, `--friction`, `--pair`, `--defaults`, `--names` and `--font` drive `source/meter/` and the
+`--rate`, `--friction`, `--pair`, `--defaults`, `--free`, `--visible`, `--names` and `--font` drive `source/meter/` and the
 parameter list directly. They cannot depend on a rasteriser or a raster because
 neither exists while they run. That is the single most important decision in the
 harness and it is why `verify.sh` groups them under "physics (no GL)".
@@ -238,6 +273,17 @@ harness and it is why `verify.sh` groups them under "physics (no GL)".
 | Free agrees with Standard at the defaults | 1e-4 relative | The controls are floats (~7 significant digits) and the rise map amplifies relative error by `ln 100 = 4.6`, so the floor is ~5e-7. 1e-4 is two hundred times that and still far tighter than the gap between any two values anybody would confuse. |
 | Reference, trim, hold time, hold decay | 1e-4 / 1e-3 absolute | Exact linear maps of exactly-representable constants; the tolerance is a float-rounding allowance. |
 | Names, duplicates, blank and duplicate glyphs | counts | No tolerance. |
+| The level law is `ffglqs::Audio`'s volume | 1e-3 dB | The SDK sums float squares into a float: at most 64 ulps of the power, 3.8e-6 relative, 1.7e-5 dB of level. 1e-3 dB is fifty times that and eighteen thousand times below the 18.06 dB it exists to catch. Measured 1e-6 dB at worst, on four spectra. |
+| The same power in one bin as in 64 reads the same | 1e-3 dB | Same float argument. It is the Parseval claim, now exercised where `inject()` used to exercise it. |
+| SDK volume −18 dB reads 0 VU at the default, Magnitude and Power | 1e-5 of full scale | Float bins are 6e-8 relative, so about 4e-8 of deflection; three seconds leaves the movement e^-33 from its target. v0.1.1 settles at 5.66. |
+| The stop: 24 dB over 0 VU never passes 1.035, and leaves within a frame of the level going | exact / one frame | The clamp makes the first exact. From the stop at rest, one 16.7 ms frame of the spring moves it about 0.026 off. Measured: off on the very frame the level goes. v0.1.1: 11.36, and 13 frames. |
+| Free, engine rate: a step in the faster direction overshoots by exactly Mp(ζ), the slower by no more | `2·ω²·Mp·h²` of the step, per case, + 1e-9 | The sampled extreme misses the true one by half the curvature times a step squared, and the curvature at an extreme is the stiff spring's pull, ω² times the excursion. 1e-7 at the defaults, 7e-4 at a 20 ms Rise and 40 %. A sample can only fall short of the peak, so "no more than" needs only the RK4 floor. v0.1.1: 11.6275 % at the defaults, 15 of 36 steps wrong. |
+| Free, engine rate: 99 % in exactly Rise (up) and Fall (down) | 2 µs | Linear interpolation between two steps on a nearly straight stretch of curve; the 99 % crossing is before the target crossing, so it is entirely on the direction's own spring and the solved ωn is exact. |
+| Free, engine rate: a beat during a slow (20 s) fall reaches 99 % within the 20 ms Rise + 5 % | 5 % | Not derived: an ordering with room. The stiff spring stops the slide in microseconds; measured 20.21 ms. A pure "choose by velocity" rule would take seconds here. |
+| On Standard `DriveMovement` is `Movement::Step` | exact equality, both state variables, 19,200 steps | One spring, early return. The ANSI figures are measured on `Movement::Step`. |
+| Free through the plugin at 60 fps: the shipped defaults overshoot Mp on the VU and the eye | `−2·ω²·Mp/60²` | The frame grid instead of the step grid, same argument. Measured 1.2500 % and 1.2481 %. v0.1.1: 11.63 % and 11.24 %. |
+| Free on programme: never past the programme's range by more than `2·Mp/(1−Mp)` of its span | that bound + 1e-9 | For a linear second-order movement driven anyhow between two levels, the worst excursion is the impulse response's absolute integral less one, `2·Mp/(1−Mp)`. Braking on the stiffer spring only shortens an excursion. Four Rise/Fall settings, beats and dips. v0.1.1 failed 4 of 8. |
+| Visibility at construction, on all 4 Types × Standard, and the events raised | exact | Flags, not measurements. |
 
 ### The pixel check (one rasteriser, two rasters)
 
@@ -351,6 +397,23 @@ across.
   hidden, and carries its own negative control.
 - **Asserting that two floating-point clock origins agree bit for bit.** See
   `--prime`, above.
+- **The level law's footing (needle#1).** The sum over 64 bins assumed a
+  full-scale sine sums to 1.0; Resolume's bins evidently sit on the SDK's
+  per-bin 0..1 footing, and the sum read 18.06 dB hot. Every harness check
+  injected exactly what the law expected, so nothing here could see it — the
+  check that does now compares against the SDK's own code, not against a
+  restatement of the law.
+- **Switching a second-order movement on the wrong variable (needle#1).** Free
+  chose the rise's or the fall's spring by `u >= x`. A rising pointer that passed
+  its target got the fall's weak spring and weak damping and coasted: 11.6 %
+  overshoot at the defaults, 83 % at Fall 20 s, and a beat programme read well
+  above its loudest moment. `--defaults` compared the resolved constants and
+  passed throughout, because the constants were right; only a trajectory check
+  sees it. Two tempting fixes are wrong too. Choosing by the sign of the velocity
+  ignores a beat that arrives during a slow fall for seconds (the fall's spring
+  has to turn the pointer round). Braking on the stiffer spring for a whole step
+  hands a pointer creeping the wrong way at rest a kick of `ω²·(u−x)·h` — four
+  full scales a second at a 20 ms Rise — so the step is split at the turn.
 - **A dial's proportions are not free either.** The first version put the pivot
   inside the face with a radius slightly under its half-height, and the result
   was a tiny arc floating in a big blank rectangle. A VU's arc is *shallow*
@@ -377,7 +440,28 @@ across.
 - **Free is deliberately unphysical**: a rise that differs from a fall is a
   switched system and no mass on a spring does that. It is there because an
   operator wants a meter that looks good on a beat, and saying so is better than
-  pretending the result is still a VU.
+  pretending the result is still a VU. Which spring runs is decided in
+  `DriveMovement` (Engine.h has the long version): at rest or heading for the
+  target, the direction's own; carried past it, the stiffer, until it turns
+  round. That keeps Rise and Fall exact (both are 99 % times, reached before the
+  target), keeps Overshoot exact for the faster direction and an upper bound for
+  the slower, and catches a new rise at once.
+- **The VU has stops**, inelastic, at −0.02 and 1.035 of full scale — the same
+  numbers the drawing has always clamped to (`kDialStopLow/High`). A real pointer
+  meets a pin; without one the model ran on to eleven times full scale and sat
+  pinned for 217 ms after the level went. The ANSI checks never reach either
+  stop, and `--rate` still reads 0.712908590. The eye has none, on purpose: its
+  wings are meant to cross past closure, and the PPM has no movement.
+- **The inspector shows only what can act** (`ApplyVisibility`, the rules in
+  Controls.h, "Hidden is not dead"): Rise and Fall with Standard off, Overshoot
+  with Standard off on the VU and the eye, Peak Hold and Hold Decay on the
+  bargraph, Persistence on the eye. Standard and Type are never hidden — the
+  switch that brings a thing back must stay (vectrix's rule). Hidden at
+  construction without events, then events raised on every Type or Standard
+  change, which is exactly what vectrix measured Arena honouring. Standard heads
+  the Ballistics group so that, on Standard, the group says where the rest went.
+  Its id did not change (5: the last of Meter, now the first of Ballistics), and
+  a composition stores names, not ids, anyway (vectrix's docs/NOTES.md).
 - **The bargraph shares the PPM's detector.** An LED meter and a moving-coil PPM
   off the same rectifier differ in the display, not in the detector.
 - **The PPM has no movement of its own**, only a detector: IEC 60268-10
@@ -422,7 +506,10 @@ across.
   repo, would settle it for all of them.
 - **Whether the default Reference Level is the useful one.** −18 dBFS is EBU
   R68's alignment level and it is a guess about a host whose calibration is
-  unknown. An hour in Arena would replace the guess with a number.
+  unknown. needle#1 is one data point — the old law pinned until the reference
+  was 18 dB higher — and the RMS law answers it, but an hour in Arena with a
+  known tone and a log of the bins would replace the guess with a number. The
+  Windows bench has no sound device, so it has to be a Mac or a box with one.
 - **Whether 54° of sweep and a 1.55:1 window read as a VU meter to somebody who
   owns one.** Nobody has seen this on a wall.
 - **Whether four instruments in one plugin is right**, or whether the bargraph
@@ -487,6 +574,14 @@ Decisions made rather than asked:
 - A readout line under the picture shows, each frame, the level the plugin's law
   read from the page's spectrum, the input on the meter's scale, the PPM
   detector and the engine steps taken — so a visitor can see what went in.
+
+After needle#1 the page carries the RMS law (and writes each test spectrum with
+64 times the power, so a test level still reads exactly), `DriveMovement`, the
+VU's stops and Standard at the top of Ballistics. The kit's panel cannot hide a
+control, so the page shows all 31 and the hints say which act. The port was run
+once in node on 2026-10-11 against the same three claims (−18 dB bins read
+−18 dB; Free at the defaults overshoots 1.2500 %; +24 VU never passes 1.035) —
+a one-off, not a check.
 
 Gaps: no measurement of any kind on the page (the harness is the evidence); GLSL
 ES 3.00 in WebGL2, not GL 4.1 core; JS doubles where the C++ has floats in the

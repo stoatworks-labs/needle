@@ -158,8 +158,12 @@ struct Eye
 		warm  = 0.0;
 	}
 
-	void Step( double h, double u, double zeta, double omegaN, double persistenceTau,
-			   double warmTau, double friction = 0.0 );
+	/// The tube's half of a step: the phosphor and the heater, following
+	/// wherever `movement` has just been driven. The engine drives the
+	/// movement itself (`DriveMovement` in Engine.cpp), because in Free its
+	/// rise and fall are two springs and choosing between them is the engine's
+	/// job, the same for the eye as for the VU.
+	void Step( double h, double persistenceTau, double warmTau );
 
 	/// Shadow half-sector angle in degrees: `kEyeOpenDegrees` at rest, zero at
 	/// and beyond full deflection.

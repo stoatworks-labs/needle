@@ -44,6 +44,26 @@
 	splits its group in two in the inspector. The enum below is the inspector,
 	top to bottom.
 
+	Moving an id is safe for saved work; renaming one is not. A Resolume
+	composition stores `name`/`value` pairs, and only for parameters that differ
+	from their default -- not indices. vectrix proved that on Arena
+	(docs/NOTES.md there, 2026-08-26): it moved a parameter and shifted every id
+	after it, and a composition saved on the old build reloaded onto the right
+	controls. A renamed parameter, by contrast, silently loses its saved value,
+	and an option's elements are stored as numbers, so they are append-only.
+
+	`Standard` moved from Meter to the top of Ballistics for needle#1 without
+	even that: it was the last of one run and is the first of the next, id 5
+	either way, so only its group changed.
+
+	## Hidden is not dead
+
+	Some controls only act on some settings, and since needle#1 the inspector
+	only shows them there (`NeedlePlugin::ApplyVisibility`): Rise and Fall with
+	Standard off, Overshoot with Standard off on the VU and the eye, Peak Hold
+	and Hold Decay on the bargraph, Persistence on the magic eye. A hidden
+	control keeps its value and is still read the moment it shows again.
+
 	## Names
 
 	FFGL truncates a parameter name at 16 characters, in the host, silently.
@@ -60,9 +80,13 @@ enum ParamId : FFUInt32
 	PT_REFERENCE,
 	PT_SENSITIVITY,
 	PT_BIN_LAW,
-	PT_STANDARD,
 
 	// -- Ballistics ---------------------------------------------------------
+	// Standard heads the group because it decides whether the three below it
+	// exist: on Standard, Rise, Fall and Overshoot are hidden (see
+	// `NeedlePlugin::ApplyVisibility`). It sat in Meter until needle#1, where
+	// a Ballistics group of five sliders that did nothing read as broken.
+	PT_STANDARD,
 	PT_RISE,
 	PT_FALL,
 	PT_OVERSHOOT,

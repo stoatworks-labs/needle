@@ -185,6 +185,8 @@ if(NEEDLE_BUILD_TOOLS AND APPLE)
     add_test(NAME rate       COMMAND ndtest --rate)
     add_test(NAME friction   COMMAND ndtest --friction)
     add_test(NAME defaults   COMMAND ndtest --defaults)
+    add_test(NAME free       COMMAND ndtest --free)
+    add_test(NAME visible    COMMAND ndtest --visible)
     add_test(NAME names      COMMAND ndtest --names)
     add_test(NAME font       COMMAND ndtest --font)
     # And the one that needs a rasteriser.
