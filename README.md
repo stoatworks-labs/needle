@@ -174,7 +174,7 @@ Three honest limits follow, and none of them is hidden:
 
 ## Status
 
-**v0.1.1, released on 2026-09-23 (v0.1.0 the same day), and honestly early.**
+**v0.1.2, released on 2026-10-11 (v0.1.0 and v0.1.1 on 2026-09-23), and honestly early.**
 
 User guide: [docs/USER-GUIDE.md](docs/USER-GUIDE.md), also at
 https://stoatworks-labs.com/software/needle/guide/

@@ -12,7 +12,7 @@ tuned until it looked right.
 *A stereo pair just past 0 VU, rendered by the plugin's own offline harness (`ndtest`), not
 captured from Resolume.*
 
-> **Before you rely on this:** released at **v0.1.0**, and honestly early. The ballistics are
+> **Before you rely on this:** released at **v0.1.2**, and honestly early. The ballistics are
 > measured rather than asserted, against the engine itself rather than against pixels: a step to
 > 0 VU reaches 99 % in **300.000 ms** and overshoots by **1.2500 %** (the standard allows
 > 300 ± 5 ms and 1.0–1.5 %); a PPM falls 20 dB in **2.800000 s**; the bargraph's ten thresholds,
@@ -74,7 +74,7 @@ log says `no audio on this layer -- every FFT bin is zero`. Play something and i
 move **Reference Level** until the pointer sits on 0 VU. That one step matters more than any other,
 because what Resolume's spectrum reads for a given tone is not known — see Bin Law, below.
 
-> **Changed after v0.1.1 ([needle#1](https://github.com/stoatworks-labs/needle/issues/1)).** Up to
+> **Changed in v0.1.2 ([needle#1](https://github.com/stoatworks-labs/needle/issues/1)).** Up to
 > v0.1.1 the level was the square root of the *sum* of the bins, which reads **18 dB higher** than
 > the RMS it is now — on a real Resolume rig the needle sat off the end of the scale until Reference
 > Level was at its 0 dBFS stop. If you saved a composition with Reference Level or Sensitivity moved

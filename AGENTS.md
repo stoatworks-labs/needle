@@ -15,8 +15,8 @@ bisection, the magic eye's shadow, frame-one priming, frame-rate independence,
 the dead band a worn pivot leaves, the defaults, the names, the font, the pixel checks at two rasters, the
 dead-control sweep, registration, lipo, plist, ad-hoc codesign and oxbow.
 
-Released at v0.1.0 on 2026-09-23 and v0.1.1 the same day (the Stereo Pair fix,
-below), public at github.com/stoatworks-labs/needle
+Released at v0.1.0 on 2026-09-23, v0.1.1 the same day (the Stereo Pair fix,
+below) and v0.1.2 on 2026-10-11 (needle#1, below), public at github.com/stoatworks-labs/needle
 (created the same day), and registered with the website (`projects.json`, beta,
 guide) and with stoatworks-backend's sync-about TARGETS, `names.json`,
 `visibility.json` and `derived.json`. The user guide is `docs/USER-GUIDE.md`,
@@ -38,7 +38,7 @@ is Apple Silicon only. There are no factory presets and no OpenFX port.
 The browser demo went live on 2026-09-24 at
 https://needle-demo.stoatworks-labs.com — see "The browser demo", below.
 
-**After v0.1.1, unreleased (needle#1, 2026-10-11).** The first report from a
+**v0.1.2, released 2026-10-11 (needle#1).** The first report from a
 real Resolume rig (VJPandaAU) said the needle pinned at the default Reference
 Level and the Ballistics controls did nothing. Both were real, and three changes
 answer them:
