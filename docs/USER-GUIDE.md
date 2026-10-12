@@ -1,19 +1,20 @@
 # Needle user guide
 
-Needle is **four audio meters with the ballistics their standards actually specify**, as an FFGL
-source for [Resolume](https://resolume.com) Arena and Avenue: a VU, a BBC-style peak programme
-meter, an LED bargraph and a magic eye, drawn live at the output's own raster. The point of it is
-that **the movement is not a free choice.** A VU's damping and natural frequency are solved in code
-from the two figures ANSI C16.5 gives, a PPM's time constants from IEC 60268-10's, and nothing was
-tuned until it looked right.
+Needle is four audio meters for [Resolume](https://resolume.com) Arena and Avenue, as an FFGL
+source: a VU, a BBC-style peak programme meter, an LED bargraph and a magic eye, drawn live at the
+output's own raster and moving with the ballistics their standards actually specify.
+
+You don't get to choose how the needle moves. A VU's damping and natural frequency are solved in
+code from the two figures ANSI C16.5 gives, a PPM's time constants from IEC 60268-10's, and
+nothing was tuned until it looked right.
 
 ![A stereo pair of VU meters, needles just into the red](hero.png)
 
-*A stereo pair just past 0 VU, rendered by the plugin's own offline harness (`ndtest`), not
-captured from Resolume.*
+*A stereo pair just past 0 VU, rendered by the plugin's own offline harness (`ndtest`) rather
+than captured from Resolume.*
 
-> **Before you rely on this:** released at **v0.1.2**, and honestly early. The ballistics are
-> measured rather than asserted, against the engine itself rather than against pixels: a step to
+> **Before you rely on this:** it's at **v0.1.2**, and still early days. The ballistics are
+> measured rather than taken on trust, against the engine itself rather than pixels: a step to
 > 0 VU reaches 99 % in **300.000 ms** and overshoots by **1.2500 %** (the standard allows
 > 300 ± 5 ms and 1.0–1.5 %); a PPM falls 20 dB in **2.800000 s**; the bargraph's ten thresholds,
 > recovered by bisecting on the input, are **3.000000 dB** apart; and the same half second of
@@ -23,10 +24,12 @@ captured from Resolume.*
 > It has **never been loaded into Resolume on macOS**, and no real audio has reached it in a
 > host. Everything above is the offline harness driving the real plugin class. Resolume hands a
 > plugin a 64-bin spectrum, and nobody has measured whether those bins are magnitudes or powers, or
-> what level a full-scale tone produces — so the calibration is nominal, and **Bin Law** exists to
-> let you flip the one assumption that would otherwise be buried.
-> On Windows, a build of v0.1.0 loads, registers as a source and draws its meters in Resolume Arena 7.27.1, with every control matching what the plugin declares — on software rendering and on a machine with no sound device, so the audio path has not been heard there either.
-> Try it on a spare layer before you put it in a show.
+> what level a full-scale tone produces, so the calibration is nominal, and **Bin Law** is there
+> so you can flip the one assumption that would otherwise be buried. On Windows, a build of v0.1.0
+> loads, registers as a source and draws its meters in Resolume Arena 7.27.1, with every control
+> matching what the plugin declares. That was on software rendering, on a machine with no sound
+> device, so the audio path hasn't been heard there either. Try it on a spare layer before you
+> put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
 
@@ -42,29 +45,29 @@ macOS    ~/Documents/Resolume Arena/Extra Effects/
 Windows  %USERPROFILE%\Documents\Resolume Arena\Extra Effects\
 ```
 
-Avenue uses the same layout under its own folder name. **SW Needle** then appears among the
-**Sources**, not the effects.
+Avenue uses the same layout under its own folder name. **SW Needle** then shows up among the
+**Sources** rather than the effects.
 
 The download is a universal macOS `.dmg` or `.zip` (Apple Silicon and Intel) and a Windows x64
-installer or `.zip`. The macOS build is **Developer ID-signed and notarised**, so it simply loads.
-The Windows build is not code-signed; plugin files are not gated the way `.exe` files are, so only
+installer or `.zip`. The macOS build is Developer ID-signed and notarised, so it just loads.
+The Windows build isn't code-signed; plugin files aren't gated the way `.exe` files are, so only
 the installer trips SmartScreen, once: **More info** → **Run anyway**.
 
 ---
 
 ## Start here
 
-Needle reads exactly one thing from Resolume: the **Audio** input at the bottom of its panel, a
-spectrum of 64 bins that the host fills once per frame. There is no other way for audio to reach an
-FFGL plugin — no level, no peak, no samples. In the other Stoatworks plugins that declare the same
-input, Resolume draws it as its own audio-source picker (Local, Composition or External); needle
-has not been seen in Resolume yet, so check that it appears the same way. Point it at whatever
-Resolume is hearing — the composition's audio, or an external input from the desk.
+Needle reads one thing from Resolume, and only one: the **Audio** input at the bottom of its panel,
+a spectrum of 64 bins that the host fills once per frame. There's no other way for audio to reach
+an FFGL plugin: no level, no peak, no samples. In the other Stoatworks plugins that declare the
+same input, Resolume draws it as its own audio-source picker (Local, Composition or External);
+needle hasn't been seen in Resolume yet, so check it shows up the same way. Point it at whatever
+Resolume is hearing: the composition's audio, or an external input from the desk.
 
 Needle's level is the **RMS over all 64 bins**: the square root of the mean of the squared bins,
-which is exactly what the FFGL SDK's own audio helper calls the volume. By Parseval's theorem that
-follows the signal's power however the bins happen to be laid out in frequency, so the meter does
-not depend on Resolume's bins being linear, logarithmic or anything else.
+which is what the FFGL SDK's own audio helper calls the volume. By Parseval's theorem that
+follows the signal's power however the bins happen to be laid out in frequency, so the meter
+doesn't depend on Resolume's bins being linear, logarithmic or anything else.
 
 At the defaults you get **one VU meter** on a cream face, 62 % of the short side of the frame tall,
 in the middle, over transparency. With nothing arriving the pointer rests at the left stop, and the
@@ -72,13 +75,13 @@ log says `no audio on this layer -- every FFT bin is zero`. Play something and i
 
 **Then calibrate it.** Play programme at the level you want to call zero, or a line-up tone, and
 move **Reference Level** until the pointer sits on 0 VU. That one step matters more than any other,
-because what Resolume's spectrum reads for a given tone is not known — see Bin Law, below.
+because what Resolume's spectrum reads for a given tone isn't known (see Bin Law, below).
 
 > **Changed in v0.1.2 ([needle#1](https://github.com/stoatworks-labs/needle/issues/1)).** Up to
 > v0.1.1 the level was the square root of the *sum* of the bins, which reads **18 dB higher** than
-> the RMS it is now — on a real Resolume rig the needle sat off the end of the scale until Reference
-> Level was at its 0 dBFS stop. If you saved a composition with Reference Level or Sensitivity moved
-> to stop that, it will now read about 18 dB low: put Reference Level back towards −18 dBFS (or
+> the RMS it is now, and on a real Resolume rig the needle sat off the end of the scale until
+> Reference Level was at its 0 dBFS stop. If you saved a composition with Reference Level or
+> Sensitivity moved to stop that, it'll now read about 18 dB low: put Reference Level back towards −18 dBFS (or
 > Sensitivity back up by 18 dB) and recalibrate.
 
 ---
@@ -101,16 +104,16 @@ magic eye shuts. Lower the reference and the meter reads higher. "dBFS" here is 
 footing: every bin at 1.0 is 0 dBFS, so at the default the needle sits on 0 VU when the SDK's
 volume is −18 dB. With Sensitivity as well, 0 VU can be put anywhere from −52 dB to +12 dB.
 
-**Sensitivity** — a trim of ±12 dB on the input, 0 dB at the middle. It is there because the
+**Sensitivity** — a trim of ±12 dB on the input, 0 dB at the middle. It's there because the
 absolute calibration of Resolume's spectrum is unknown: Reference Level says what zero means,
 Sensitivity puts the programme where it should sit against it.
 
 **Bin Law** — how the spectrum's values are read: **Magnitude** (the default) or **Power**. Nobody
 has measured which of the two Resolume sends, and plugins in this fleet disagree with each other
-about it, so it is a switch rather than a guess. Magnitude takes the square root of the mean of the
+about it, so it's a switch rather than a guess. Magnitude takes the square root of the mean of the
 squared bins; Power takes the square root of the plain mean. **To tell which is right on your rig**,
 change a tone by exactly 10 dB at the source and watch the meter: with the right law it moves
-10 dB; with the wrong one it moves 5 dB or 20 dB. Do not reach for Power to cure a needle that
+10 dB; with the wrong one it moves 5 dB or 20 dB. Don't reach for Power to cure a needle that
 pins: on bins below 1.0 it reads *higher* than Magnitude.
 
 ---
@@ -124,16 +127,16 @@ needle#1 all five were always there, and on the default VU with Standard on not 
 anything.)
 
 **Standard** — on by default. **On**, every ballistic constant comes from the specification, and
-Rise, Fall and Overshoot are not consulted at all — they are out of the model, not merely
-overridden, which is why they are hidden. **Off** ("Free"), those three are yours. The result is
-then deliberately not a movement any more: a rise that differs from a fall is a switched system,
-and no mass on a spring does that. It is there because a meter that looks good on a beat is a
-legitimate thing to want. (Standard sat in the Meter group until needle#1; saved compositions keep
+Rise, Fall and Overshoot aren't consulted at all. They're out of the model, not just overridden,
+which is why they're hidden. **Off** ("Free"), those three are yours. The result then isn't a
+movement any more, on purpose: a rise that differs from a fall is a switched system, and no mass
+on a spring does that. It's there because a meter that looks good on a beat is a perfectly
+reasonable thing to want. (Standard sat in the Meter group until needle#1; saved compositions keep
 its value.)
 
 **Rise** — how long a rising step takes to reach 99 % of where it is going, 20 ms to 2 s. The
 default is **300 ms**, ANSI C16.5's figure, so on the VU and the eye, Free and Standard rise alike.
-On the PPM and the bargraph it sets the same 99 % time for the detector — and 300 ms there is far
+On the PPM and the bargraph it sets the same 99 % time for the detector, and 300 ms there is far
 slower than the standard PPM, whose integration time constant is 3.16 ms.
 
 **Fall** — how long a fall takes, measured the way each instrument's own standard measures it:
@@ -144,16 +147,16 @@ fall much more slowly at this default than they do on Standard.
 
 **Overshoot** — how far the VU and the eye swing past their target before settling back, 0.1 % to
 50 %, and the default is the standard's **1.25 %**. It sets the movement's damping, and it does
-nothing on the PPM or bargraph, whose detector is not a movement. The bottom of the range is not
-zero on purpose: zero is critical damping, and 0.1 % already looks the same. A step in the faster
-of the two directions — a rise, when Rise is shorter than Fall — overshoots by exactly this; a step
+nothing on the PPM or bargraph, whose detector isn't a movement. The bottom of the range isn't
+zero, on purpose: zero is critical damping, and 0.1 % already looks the same. A step in the faster
+of the two directions (a rise, when Rise is shorter than Fall) overshoots by exactly this; a step
 in the slower direction is braked by the faster spring and overshoots by less, never more. So a
 needle never coasts past its programme. (Up to v0.1.1 it did: in Free at the defaults a step to
 0 VU overshot by 11.6 %, and with a long Fall the needle read well above anything in the
 programme.)
 
 **Peak Hold** — how long the bargraph's hold bar sits at a peak, 0 to 10 s; the default is 1.5 s.
-**At zero there is no bar at all.** Bargraph only, and shown only there.
+**At zero there's no bar at all.** Bargraph only, and shown only there.
 
 **Hold Decay** — how fast the hold bar comes down once its hold has run out, 0 to 48 dB a second;
 the default is 12 dB/s. Bargraph only, and shown only there.
@@ -163,7 +166,7 @@ the default is 12 dB/s. Bargraph only, and shown only there.
 ## The Look group
 
 **Face Red / Green / Blue** — the instrument's face, a warm cream by default. On the magic eye it
-colours the bezel the tube sits in; the tube's green is fixed, because it is the phosphor.
+colours the bezel the tube sits in; the tube's green is fixed, because it's the phosphor.
 
 **Needle Red / Green / Blue** — the pointer and the scale's ink, near-black by default. On the
 bargraph it tints the unlit LEDs. **It does nothing on the magic eye**, which has no needle.
@@ -183,14 +186,14 @@ the way a real one does. 0.35 by default.
 **Glass** — a single reflection streak across the top left, the way a curved cover catches a room.
 0.25 by default; 0 is no glass.
 
-**Wear** — an old meter. It is the one Look control that is not purely cosmetic. It dirties the
+**Wear** — an old meter. It's the one Look control that isn't purely cosmetic. It dirties the
 face and dims the LEDs and phosphor, and **it puts dry friction in the pivot** of the VU and the
-eye. Friction is not more damping: a damped movement is slower but still arrives, while a worn one
+eye. Friction isn't more damping: a damped movement is slower but still arrives, while a worn one
 stops dead somewhere short, inside a dead band, and at a different place depending on which way
-it came. That is why people tap a tired meter. At Wear 1 the band is 3 % of full scale either side,
+it came. That's why people tap a tired meter. At Wear 1 the band is 3 % of full scale either side,
 and the pointer is measured to stop **2.0 % of full scale** short of its target, both ways. At
-Wear 0, the default, the movement is **bit-identical** to a clean one — that is where the ANSI
-figures above are measured. The PPM and bargraph are not stuck by it, because their detector has
+Wear 0, the default, the movement is **bit-identical** to a clean one, and that's where the ANSI
+figures above are measured. The PPM and bargraph aren't stuck by it, because their detector has
 no pivot to stick.
 
 **Persistence** — how long the magic eye's phosphor keeps glowing after the shadow has moved, 0 to
@@ -210,7 +213,7 @@ of the frame either way from the centre; a higher Position Y moves it down.
 
 **Rotation** — −180° to +180°, 0 at the middle of the slider. A stereo pair turns as one panel
 rather than orbiting the centre. The scale numbers are pixel-exact only at 0°; at any other angle
-they are resampled and pick up ragged edges.
+they're resampled and pick up ragged edges.
 
 **Background** — how opaque the colour behind the instrument is. The default is 0, fully
 transparent, so the meter sits over whatever is below it in the composition. The instrument's own
@@ -226,13 +229,13 @@ Background above 0.
 ## The four instruments
 
 **VU** — ANSI C16.5, also published as IEC 60268-17. A d'Arsonval movement is a mass on a spring
-with viscous damping, which has exactly two free parameters, and the standard makes exactly two
+with viscous damping, which has just two free parameters, and the standard makes just two
 statements: 99 % of a step to 0 VU in 300 ms, and an overshoot of 1.0 % to 1.5 %. Needle designs to
 the middle of that band and solves for the rest, giving a damping ratio of **0.812716986** and a
 natural frequency of **13.5119 rad/s (2.1505 Hz)**. The scale runs from −20 to +3 VU, with a red
 band from 0 up. **0 VU sits at 71 % of the arc, not in the middle**, because a VU scale is linear in
-voltage: 1/10^(3/20) is 0.708. The needle overshoots a kick by 1.25 % and settles back because that
-is what the standard asks for. Driven past +3 VU it rests on its **stop**, a hair past the end of
+voltage: 1/10^(3/20) is 0.708. The needle overshoots a kick by 1.25 % and settles back because
+that's what the standard asks for. Driven past +3 VU it rests on its **stop**, a hair past the end of
 the scale, and comes off it as soon as the level drops.
 
 ![A BBC-style PPM on a black face, pointer at mark 5](ppm.png)
@@ -243,7 +246,7 @@ the judgement to you. The scale is linear in decibels, so the marks are evenly s
 is 20 dB in 2.8 s, which is a time constant of **1.2160 s**, because an exponential decay in
 amplitude is a straight line in decibels. The integration is set so a 5 ms burst reads 2 dB below
 the same tone held, a time constant of **3.16 ms**. The ballistics are the standard's; the
-detector is not — see [Known limits](#known-limits).
+detector isn't (see [Known limits](#known-limits)).
 
 ![A ten-step LED bargraph with a hold bar](bargraph.png)
 
@@ -259,7 +262,7 @@ Decay are yours on both settings of Standard.
 **Magic Eye** — a 6U5 tuning indicator. A green fluorescent target with a shadow that is **100°**
 wide with no signal, closing as the level rises across a 40 dB range and **shutting at the
 reference level**. Past that, the two wings sweep through each other and the overlap burns
-brighter — 15° of overlap at +6 dB — which is what anyone who has used one actually watches for.
+brighter (15° of overlap at +6 dB), which is what anyone who has used one actually watches for.
 The target warms up from cold over the first few seconds, as a heater does. Only the 100° is a
 published figure; the mapping from level to angle, the warm-up, the persistence and the wear are
 this plugin's own model. Nothing specifies a magic eye's movement either, so on Standard it
@@ -283,8 +286,8 @@ with a spread of exactly zero.
 **Frame one takes no steps.** A clip triggered 40 seconds into a composition is handed a clock that
 reads 40; Needle adopts that as its origin rather than integrating 40 seconds before anybody has
 seen a frame. Such a clip reaches 99 % in **300.24 ms**, the same to 2.5 µs as one triggered at zero.
-The meters start at rest and swing up, as a meter does. A frame longer than a quarter of a second —
-a stall, a seek, a scrub — is treated as a quarter of a second.
+The meters start at rest and swing up, as a meter does. A frame longer than a quarter of a second
+(a stall, a seek, a scrub) is treated as a quarter of a second.
 
 The CPU works out every position; the shader only draws.
 
@@ -293,7 +296,7 @@ The CPU works out every position; the shader only draws.
 ## Performance
 
 `ndtest --bench` measures **under 0.03 ms a frame at every raster from 720p to 4K** on Apple
-Silicon — under a fifth of one per cent of a 60 fps frame. That is as precise as the measurement
+Silicon, which is under a fifth of one per cent of a 60 fps frame. That's as precise as the measurement
 gets: one pass is so cheap that the number is dominated by scheduling, and back-to-back passes at
 4K have ranged from 0.020 to 0.077 ms. Nothing has been timed on Windows or inside Resolume.
 
@@ -301,35 +304,35 @@ gets: one pass is so cheap that the number is dominated by scheduling, and back-
 
 ## Known limits
 
-- **Never loaded into Resolume on macOS**, and no real audio has reached it in a host. How 31
-  controls in four groups present in Resolume's inspector is untested.
+- **Never loaded into Resolume on macOS**, and no real audio has reached it in a host. How the 31
+  controls in four groups look in Resolume's inspector is untested.
 - **The calibration is nominal.** Whether a full-scale tone produces a bin of 1.0 depends on the
-  host's window and normalisation, which the plugin cannot discover. The level stands on the FFGL
+  host's window and normalisation, which the plugin can't discover. The level stands on the FFGL
   SDK's own footing, chosen after one report from a real Resolume rig; nobody has yet logged what
   Resolume puts in the bins for a known tone. Reference Level and Sensitivity are how you put the
   needle where your programme sits, and Bin Law is a guess you can flip.
-- **It is not a true-peak meter, and cannot be.** A magnitude spectrum has no phase, so the peak
-  inside the block cannot be recovered. The PPM and bargraph are driven by a block RMS: on a sine
-  that reads 3.01 dB below a real PPM, and on peakier material — drums, speech, anything clipped —
+- **It isn't a true-peak meter, and can't be.** A magnitude spectrum has no phase, so the peak
+  inside the block can't be got back. The PPM and bargraph are driven by a block RMS: on a sine
+  that reads 3.01 dB below a real PPM, and on peakier material (drums, speech, anything clipped)
   further below by that material's crest factor.
-- **A transient shorter than a frame is already averaged** before Needle sees it: there is one
-  spectrum per frame. The PPM's 3.16 ms integration is honoured by the engine but cannot be
+- **A transient shorter than a frame is already averaged** before Needle sees it: there's one
+  spectrum per frame. The PPM's 3.16 ms integration is honoured by the engine but can't be
   exercised by programme through this path.
 - **A stereo pair is two instruments on one spectrum.** Both read the programme.
 - **Three quoted figures come from background knowledge and were not checked against a
   document**: the PPM's 2 dB for a 5 ms burst, the BBC PPM's seven marks 4 dB apart, and the 6U5's
   100° shadow. Only the first can affect a ballistic claim.
-- **Free at the defaults is not identical to Standard.** The VU's rise and overshoot and the PPM's
-  fall match; the VU's and eye's fall and the PPM's rise do not, because one Rise and one Fall
-  control cannot match both instruments' standards at once.
-- **Hiding controls is untested in Resolume for this plugin.** Arena honours it live — measured
-  for another Stoatworks plugin (vectrix) — but needle's own panel has not been seen in Resolume.
+- **Free at the defaults isn't identical to Standard.** The VU's rise and overshoot and the PPM's
+  fall match; the VU's and eye's fall and the PPM's rise don't, because one Rise and one Fall
+  control can't match both instruments' standards at once.
+- **Hiding controls is untested in Resolume for this plugin.** Arena honours it live (measured
+  for another Stoatworks plugin, vectrix), but needle's own panel hasn't been seen in Resolume.
   Arena keeps the parameter layout a clip had when the plugin was first put in it (seen with
   vectrix), so if the panel looks unchanged after updating, drop needle into a fresh clip.
 - Text is pixel-exact only at Rotation 0. No factory presets and no OpenFX port.
-- **There is a browser demo** at [needle-demo.stoatworks-labs.com](https://needle-demo.stoatworks-labs.com).
-  It is a port to a web page, not the plugin: the shaders run in WebGL2 and any CPU
-  half is rewritten in JavaScript. The page lists what it does not reproduce.
+- **There's a browser demo** at [needle-demo.stoatworks-labs.com](https://needle-demo.stoatworks-labs.com).
+  It's a port to a web page rather than the plugin: the shaders run in WebGL2 and any CPU
+  half is rewritten in JavaScript. The page lists what it doesn't reproduce.
 
 ---
 
@@ -347,11 +350,11 @@ A line reading `no audio on this layer -- every FFT bin is zero` means the Audio
 on it. The log also records the build, the GL driver, the solved ballistic constants and what unit
 the host's clock arrives in.
 
-**It moves, but barely, or pins.** Move **Reference Level** — higher reads lower — and then
+**It moves, but barely, or pins.** Move **Reference Level** (higher reads lower), then
 **Sensitivity**. Change **Bin Law** only if a 10 dB change at the source moves the meter 5 dB or
 20 dB (see Bin Law, above); on bins below 1.0, Power reads higher still.
 
-**The Ballistics group shows only Standard.** That is Standard on: switch it off for Rise, Fall and
+**The Ballistics group shows only Standard.** That's Standard on: switch it off for Rise, Fall and
 Overshoot. Peak Hold and Hold Decay appear on the bargraph, Persistence on the magic eye.
 
 **Needle Red/Green/Blue does nothing.** It has no needle to colour on the magic eye.
