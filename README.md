@@ -264,8 +264,10 @@ What isn't verified yet:
   Audio input) were skipped, because win-lab has no sound device. So Windows
   hasn't heard real audio either, and the gate says nothing about speed or a real
   GPU.
-- **No real audio has reached it in a host**, and the universal build has never
-  run on an Intel Mac.
+- **The only real audio it has had in a host** was on a user's Resolume rig
+  running v0.1.1 ([#1](https://github.com/stoatworks-labs/needle/issues/1)), which
+  is how the 18 dB error was found. Nothing in v0.1.2 has been run in Resolume with
+  audio, and the universal build has never run on an Intel Mac.
 - **The host's audio buffer is uncalibrated and its bin law is unmeasured** (see
   above). `Bin Law` exists because the fleet disagrees with itself about it.
 - **Text is pixel-exact only at Rotation 0.** Rotate the instrument and the
@@ -307,7 +309,7 @@ line.
 
 ## Building and testing
 
-The offline harness drives the real plugin class. Nine of its eleven check groups
+The offline harness drives the real plugin class. Thirteen of its fifteen check groups
 don't open a GL context at all, because their claims are about a differential
 equation, and a rasteriser has no opinions about those:
 

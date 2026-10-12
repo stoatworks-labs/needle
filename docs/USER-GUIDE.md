@@ -21,8 +21,8 @@ than captured from Resolume.*
 > signal reads identically at 24, 30, 50, 60 and 144 fps. All 31 controls are confirmed to change
 > the picture.
 >
-> It has **never been loaded into Resolume on macOS**, and no real audio has reached it in a
-> host. Everything above is the offline harness driving the real plugin class. Resolume hands a
+> It has **never been loaded into Resolume on macOS**, and the only real audio it has had in a
+> host was on a user's Resolume rig running v0.1.1 (needle#1). Everything above is the offline harness driving the real plugin class. Resolume hands a
 > plugin a 64-bin spectrum, and nobody has measured whether those bins are magnitudes or powers, or
 > what level a full-scale tone produces, so the calibration is nominal, and **Bin Law** is there
 > so you can flip the one assumption that would otherwise be buried. On Windows, a build of v0.1.0
@@ -61,7 +61,7 @@ Needle reads one thing from Resolume, and only one: the **Audio** input at the b
 a spectrum of 64 bins that the host fills once per frame. There's no other way for audio to reach
 an FFGL plugin: no level, no peak, no samples. In the other Stoatworks plugins that declare the
 same input, Resolume draws it as its own audio-source picker (Local, Composition or External);
-needle hasn't been seen in Resolume yet, so check it shows up the same way. Point it at whatever
+I haven't seen needle's panel in Resolume yet, so check it shows up the same way. Point it at whatever
 Resolume is hearing: the composition's audio, or an external input from the desk.
 
 Needle's level is the **RMS over all 64 bins**: the square root of the mean of the squared bins,
@@ -304,7 +304,8 @@ gets: one pass is so cheap that the number is dominated by scheduling, and back-
 
 ## Known limits
 
-- **Never loaded into Resolume on macOS**, and no real audio has reached it in a host. How the 31
+- **Never loaded into Resolume on macOS**, and the only real audio it has had in a host was on a
+  user's Resolume rig running v0.1.1 (needle#1). How the 31
   controls in four groups look in Resolume's inspector is untested.
 - **The calibration is nominal.** Whether a full-scale tone produces a bin of 1.0 depends on the
   host's window and normalisation, which the plugin can't discover. The level stands on the FFGL

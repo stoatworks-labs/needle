@@ -74,7 +74,8 @@ on the page.
 
 ## Deploying
 
-From the **repository root**, not from here:
+A push to `main` deploys it (`.github/workflows/deploy.yml`). By hand, from the
+**repository root**, not from here:
 
 ```bash
 cf-run npx wrangler deploy

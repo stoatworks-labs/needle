@@ -112,7 +112,7 @@ mappings or a tolerance in the harness.
 - **Never loaded into Resolume on macOS, and not installed into it there.**
   Everything on the Mac is the offline harness driving the real plugin class.
 - Windows in Resolume Arena: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device.
-- No real audio has reached it in a host; Resolume's 64-bin FFT mapping is
+- No real audio has reached it in a host except on the needle#1 rig (v0.1.1); Resolume's 64-bin FFT mapping is
   assumed (`Bin Law`), not measured. The RMS footing (needle#1) is a better guess, not a number.
 - The control hiding (needle#1) has not been seen in Resolume; vectrix measured Arena honouring it.
 - The universal build has never run on an Intel Mac. Cost figures are
@@ -121,8 +121,8 @@ mappings or a tolerance in the harness.
 
 ## Browser demo
 - Live at https://needle-demo.stoatworks-labs.com (Cloudflare Worker `needle-demo`,
-  `wrangler.toml`, assets from `demo/`). Deploy from the repo root:
-  `cf-run npx wrangler deploy`, then verify by content:
+  `wrangler.toml`, assets from `demo/`). A push to main deploys it (`deploy.yml`); by hand,
+  from the repo root: `cf-run npx wrangler deploy`, then verify by content:
   `curl -s 'https://needle-demo.stoatworks-labs.com/?cb=1' | grep -o '<title>[^<]*'`.
 - `demo/plugin.js` carries `source/Shaders.cpp`'s GLSL verbatim as three constants
   (vertex, and the fragment shader's two raw strings joined A + B).
