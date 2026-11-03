@@ -8,16 +8,41 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./vendor/kit.css" />
     <link rel="canonical" href="https://needle-demo.stoatworks-labs.com/" />
+    <meta name="project-page" content="https://stoatworks-labs.com/software/needle/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Stoatworks Labs" />
+    <meta property="og:title" content="Needle — browser demo | Stoatworks Labs" />
+    <meta property="og:description" content="Try the Needle FFGL source for Resolume in your browser: a VU, a BBC PPM, an LM3915 LED bargraph and a magic eye with standards-derived ballistics. The plugin's own shader, ported to WebGL2, driven by a port of its meter engine and a generated test signal — there is no audio in the page." />
+    <meta property="og:url" content="https://needle-demo.stoatworks-labs.com/" />
+    <meta property="og:image" content="https://stoatworks-labs.com/thumbs/needle.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="720" />
+    <meta property="og:image:alt" content="Needle" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <main id="demo">
       <noscript>
+        <h1>Needle</h1>
+        <p>
+          An FFGL source that draws four audio meters (a VU, a BBC-style PPM, an
+          LED bargraph and a magic eye), each moving the way its standard says
+          it has to. The VU's damping and natural frequency are solved in code
+          from the two figures in ANSI C16.5 rather than tuned by eye, so the
+          needle overshoots a kick by 1.25 % and settles back because that's
+          what the standard asks for.
+        </p>
         <p>
           This demo runs the plugin's shader in your browser, so it needs
           JavaScript and WebGL2. The plugin itself, its source and its downloads
           are on
           <a href="https://github.com/stoatworks-labs/needle">its repository</a>.
         </p>
+        <ul>
+          <li><a href="https://stoatworks-labs.com/software/needle/">Project page and downloads</a></li>
+          <li><a href="https://stoatworks-labs.com/software/needle/guide/">User guide</a></li>
+          <li><a href="https://github.com/stoatworks-labs/needle">Source on GitHub</a></li>
+        </ul>
       </noscript>
     </main>
 
