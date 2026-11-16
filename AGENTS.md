@@ -632,7 +632,8 @@ unchanged and passes.
 
 One character of `source/VfdShaders.cpp` changed per run, rebuilt, and run
 against the check that must notice, under a 300 s perl alarm (a hang counts as
-caught). Run 2026-11-16, arm64:
+caught). Run 2026-11-16, arm64, on the committed tree (after the `--devices`
+fix below):
 
 | Mutant (one character) | What it means | Caught by |
 |---|---|---|
@@ -648,7 +649,7 @@ caught). Run 2026-11-16, arm64:
 | `floor( q.x / uField.z )` → `q.y` | columns found from y | `--skirt` (4) |
 | `vec3( 1.0 )` → `vec3( 0.0 )` in the clip | every lit segment black | `--skirt` (4) |
 | glass `vec3( 0.0 )` → `vec3( 1.0 )` | the glass white | `--skirt` (4) |
-| `length( p - uLampA.xy ) - uLampA.z` → `+` | the status lamp drawn inside out (invisible) | `--devices` (12) |
+| `length( p - uLampA.xy ) - uLampA.z` → `+` | the status lamp drawn inside out (invisible) | `--devices` (9) |
 | `-d.x * sn` → `+d.x * sn` | the rotation's sign: a turned display mirrored | `--geometry` (3) |
 | `0.5 * uSeg` → `0.6 * uSeg` | every segment 20 % larger | `--geometry` (7) |
 | `+ 0.5 ) * uField.zw` → `+ 0.6` | every segment a tenth of a cell off centre | `--geometry` (7) |
@@ -663,6 +664,12 @@ exists: a segment 20 % larger, and the rotation's sign (no VFD check turned the
 display). The rotation's sign then passed the first `--geometry` too, because
 with every segment lit the turned display is symmetric: a mirror of it is
 itself. The check now lights only the lower segments.
+
+The lamp mutant first counted 12 failed assertions. That run was before
+`--devices` cleared `NEEDLE_NO_DEVICES`, which mutate.sh exports, so the gate was
+refusing the scripted device as well. Re-run on the committed tree it fails 9:
+still caught, and the only change to `--devices` between the runs was clearing
+the gate, so the 3 extra came from the gate.
 
 ### Traps hit building it
 
