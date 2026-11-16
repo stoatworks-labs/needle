@@ -42,6 +42,7 @@
 	    --clock       499 000 s of host clock draws what 0 s draws
 	    --filament    the wires darken by exactly their width in pixels
 	    --phosphor    ZnO:Zn green, gamut-mapped along the line to D65
+	    --geometry    every segment's edges where the spec's millimetres say
 	    --resize      a raster change mid-hold changes only the drawing
 	    --devices     the menu, the states and the lamp (scripted backend)
 	    --coreaudio   VFD off never reaches earshot, on the REAL backend
@@ -2833,6 +2834,8 @@ int main( int argc, char** argv )
 			return runFilament();
 		if( arg == "--phosphor" )
 			return runPhosphor();
+		if( arg == "--geometry" )
+			return runGeometry();
 		if( arg == "--resize" )
 			return runResize();
 		if( arg == "--devices" )
@@ -2928,8 +2931,8 @@ int main( int argc, char** argv )
 		"              --friction | --pair | --defaults | --free | --visible | --names\n"
 		"              --list | --font | --pixels | --bench\n"
 		"       ndtest --iec | --skirt | --octaves | --hold | --multiplex | --clock\n"
-		"              --filament | --phosphor | --resize | --devices | --coreaudio\n"
-		"              --negative                       the VFD (Type = VFD)\n"
+		"              --filament | --phosphor | --geometry | --resize | --devices\n"
+		"              --coreaudio | --negative         the VFD (Type = VFD)\n"
 		"       ndtest --out f.png [--size WxH] [--frames N] [--level dBFS]\n"
 		"              [--burst MS] [--set Name=value ...]\n"
 		"       ndtest --pipe [--size WxH | --width W --height H] [--fps N] [--frames N]\n"

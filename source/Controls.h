@@ -62,8 +62,11 @@
 	Some controls only act on some settings, and since needle#1 the inspector
 	only shows them there (`NeedlePlugin::ApplyVisibility`): Rise and Fall with
 	Standard off, Overshoot with Standard off on the VU and the eye, Peak Hold
-	and Hold Decay on the bargraph, Persistence on the magic eye. A hidden
-	control keeps its value and is still read the moment it shows again.
+	and Hold Decay on the bargraph and the VFD, Persistence on the magic eye.
+	The VFD's six (ids 37-42) show only on the VFD, and on the VFD the meters'
+	Count, Bin Law, ballistics and Look group are hidden: it reads none of
+	them. A hidden control keeps its value and is still read the moment it
+	shows again; one set while hidden is read when it shows (`--visible`).
 
 	## Names
 
@@ -298,7 +301,9 @@ inline double MultiplexHz( float v )
 {
 	return 50.0 * std::pow( 10.0, static_cast< double >( std::min( std::max( v, 0.0f ), 1.0f ) ) );
 }
-inline constexpr float kMultiplexDefault = 0.30103f;///< 100 Hz
+/// 100 Hz to the float's precision (100.00001 Hz): lg 2 is not a float. A
+/// check that needs whole scans uses 500 Hz, the top of the travel, exactly.
+inline constexpr float kMultiplexDefault = 0.30103f;
 
 /// Shutter: 0 is the eye (the time average). Anything above is a camera's
 /// exposure, 1/24 s at the bottom of the travel to 1/8000 s at the top,

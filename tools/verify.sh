@@ -16,6 +16,13 @@
 #                 oversampled rate, with NO GL context anywhere near them
 #   pixels        and the one check that does read pixels: that the shader
 #                 draws where the CPU said, at two rasters
+#   vfd           the VFD spectrum analyser: its bands against IEC 61260 and
+#                 its hold in audio time with no GL; its pictures at two
+#                 rasters on the GPU AND on Apple's software renderer; every
+#                 negative control caught; and VFD off never touching CoreAudio
+#   pipe          a reader that hangs up gets exit 1, never SIGPIPE's 141
+#   earshot       only source/Vfd.cpp includes earshot, so nothing else in the
+#                 plugin can reach an audio device
 #   sweep         does every control change the picture
 #   registration  does the bundle contain a plugin at all -- a file-scope
 #                 CFFGLPluginInfo nothing names, which a linker may drop while
@@ -98,6 +105,7 @@ out = pathlib.Path( sys.argv[ 1 ] )
 # Where this repo keeps its GLSL.
 FILES = [
 	"source/Shaders.cpp",
+	"source/VfdShaders.cpp",
 ]
 
 # A shader IS several adjacent raw strings here -- MSVC caps one literal at
@@ -213,8 +221,101 @@ else
 	grep -E "FAIL" /tmp/needle-pixels.log | head -8
 fi
 
+#---------------------------------------------------------------------------
+# The VFD. The same split as above: the bank and the hold are measured with no
+# GL context at all, through the plugin's own vfd::Input and vfd::Display fed
+# by earshot's feed(). The picture checks run twice, on the GPU and on Apple's
+# software renderer, each at 1280x720 and 320x180, so a check cannot pass on
+# one rasteriser at one raster by accident. ndtest installs a scripted capture
+# backend for all of them: no audio device is listed or opened, except by
+# --coreaudio, which installs the real one to prove it is never called.
+#---------------------------------------------------------------------------
+step "vfd (no GL)"
+for t in iec hold; do
+	log="/tmp/needle-$t.log"
+	if NEEDLE_NO_DEVICES=1 "$BUILD/ndtest" "--$t" >"$log" 2>&1; then
+		pass "ndtest --$t"
+	else
+		fail "ndtest --$t -- see $log"
+		grep -E "FAIL" "$log" | head -6
+	fi
+done
+
+step "vfd pictures (GPU and Apple's software renderer, 1280x720 and 320x180)"
+for t in skirt octaves multiplex clock filament phosphor geometry resize devices; do
+	for r in gpu software; do
+		log="/tmp/needle-$t-$r.log"
+		if [ "$r" = software ]; then
+			NDTEST_RENDERER=software NEEDLE_NO_DEVICES=1 "$BUILD/ndtest" "--$t" >"$log" 2>&1
+		else
+			NEEDLE_NO_DEVICES=1 "$BUILD/ndtest" "--$t" >"$log" 2>&1
+		fi
+		if [ $? -eq 0 ]; then
+			pass "ndtest --$t ($r)"
+		else
+			fail "ndtest --$t ($r) -- see $log"
+			grep -E "FAIL" "$log" | head -6
+		fi
+	done
+done
+if [ "$( grep -c "Apple Software Renderer" /tmp/needle-skirt-software.log )" -eq 1 ]; then
+	pass "the software runs ran on Apple Software Renderer"
+else
+	fail "NDTEST_RENDERER=software did not report Apple's software renderer"
+fi
+
+# VFD off must never reach CoreAudio, not even to list devices. This one runs
+# WITHOUT NEEDLE_NO_DEVICES: the gate would hide the very call it looks for.
+step "vfd off never touches CoreAudio"
+if "$BUILD/ndtest" --coreaudio >/tmp/needle-coreaudio.log 2>&1; then
+	pass "ndtest --coreaudio: no Engine, no device list, no select with the VFD off"
+else
+	fail "ndtest --coreaudio -- see /tmp/needle-coreaudio.log"
+	grep -E "FAIL" /tmp/needle-coreaudio.log | head -6
+fi
+
+step "vfd negative controls"
+if NEEDLE_NO_DEVICES=1 "$BUILD/ndtest" --negative >/tmp/needle-negative.log 2>&1; then
+	pass "$( tail -1 /tmp/needle-negative.log | sed 's/^ *//' )"
+else
+	fail "a negative control was not caught -- see /tmp/needle-negative.log"
+	grep -E "MISSED" /tmp/needle-negative.log | head -8
+fi
+
+#---------------------------------------------------------------------------
+# --pipe. A reader that closes the pipe early must end the run with exit 1,
+# never SIGPIPE's silent 141: the fleet's rule. PIPESTATUS is bash's, which is
+# why this script is bash. NDTEST_NEGATIVE=pipe leaves SIGPIPE alone and must
+# give 141, or this check is not looking at what it thinks it is.
+#---------------------------------------------------------------------------
+step "pipe"
+NEEDLE_NO_DEVICES=1 "$BUILD/ndtest" --pipe --size 320x180 --fps 30 --frames 30 2>/dev/null | head -c 1 >/dev/null
+s=${PIPESTATUS[0]}
+if [ "$s" -eq 1 ]; then pass "| head -c 1: exit 1"; else fail "| head -c 1: exit $s (want 1)"; fi
+NDTEST_NEGATIVE=pipe NEEDLE_NO_DEVICES=1 "$BUILD/ndtest" --pipe --size 320x180 --fps 30 --frames 30 2>/dev/null | head -c 1 >/dev/null
+s=${PIPESTATUS[0]}
+if [ "$s" -eq 141 ]; then pass "negative control: SIGPIPE left alone gives 141"; else fail "negative control: exit $s (want 141)"; fi
+# pipefail reaches into the substitution, so $? is ndtest's status if it failed.
+bytes=$( NEEDLE_NO_DEVICES=1 "$BUILD/ndtest" --pipe --size 320x180 --fps 30 --frames 3 --set Type=4 2>/dev/null | wc -c | tr -d ' ' )
+s=$?
+if [ "$s" -eq 0 ] && [ "$bytes" -eq $(( 3 * 320 * 180 * 4 )) ]; then
+	pass "a whole clip, the VFD included: exit 0, 3 frames of 320x180 RGBA"
+else
+	fail "a whole clip: exit $s, $bytes bytes (want 0 and $(( 3 * 320 * 180 * 4 )))"
+fi
+
+# The rule that keeps the meters off the audio hardware is structural: earshot
+# is reachable from one file.
+step "earshot"
+includers=$( grep -rl --include='*.cpp' --include='*.h' --include='*.mm' "include.*earshot/" source | sort | tr '\n' ' ' )
+if [ "$includers" = "source/Vfd.cpp " ]; then
+	pass "only source/Vfd.cpp includes earshot"
+else
+	fail "earshot is included by: $includers(want only source/Vfd.cpp)"
+fi
+
 step "sweep"
-if python3 tools/sweep.py >/tmp/needle-sweep.log 2>/dev/null; then
+if NEEDLE_NO_DEVICES=1 python3 tools/sweep.py >/tmp/needle-sweep.log 2>/dev/null; then
 	pass "no dead controls"
 else
 	fail "tools/sweep.py reports a dead control"
@@ -263,7 +364,7 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$BUNDLE" ]; then
 	if [ -x "$OXBOW" ]; then
 		# A source that lights pixels with no input and no file, so oxbow's
 		# verdict is meaningful here.
-		out=$("$OXBOW" selftest "$BUNDLE" 2>&1)
+		out=$(NEEDLE_NO_DEVICES=1 "$OXBOW" selftest "$BUNDLE" 2>&1)
 		case "$out" in
 			*"FF_INSTANTIATE_GL failed"*) fail "instantiation failed -- see: $OXBOW selftest $BUNDLE" ;;
 			*PASS*) pass "registers, instantiates and lights pixels" ;;
@@ -271,7 +372,7 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$BUNDLE" ]; then
 			*) fail "oxbow did not recognise the bundle" ;;
 		esac
 		# And the identity a host reads, which nothing else here checks.
-		probe=$("$OXBOW" probe "$BUNDLE" 2>&1)
+		probe=$(NEEDLE_NO_DEVICES=1 "$OXBOW" probe "$BUNDLE" 2>&1)
 		case "$probe" in *"id:          ND01"*) pass "id is ND01" ;; *) fail "wrong FFGL id" ;; esac
 		case "$probe" in *"name:        SW Needle"*) pass "name is SW Needle" ;; *) fail "wrong plugin name" ;; esac
 		case "$probe" in *"type:        source"*) pass "type is source" ;; *) fail "wrong plugin type" ;; esac

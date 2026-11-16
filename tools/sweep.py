@@ -42,6 +42,12 @@ first match. `ndtest --names` fails on a duplicate for that reason.
 **Never sweep the About block.** Those are buttons that open a web browser, and
 sweeping them opens one tab per press. `ndtest --list` marks them, and marks the
 audio buffer, which is the host's to write and not the operator's.
+
+**Never sweep the VFD's device controls.** Audio Input's values are device keys
+and Rescan Inputs lists the machine's devices: sweeping either would open or
+enumerate real audio hardware, and nothing may do that unless a user picks a
+device. `ndtest --list` marks them `device`; `ndtest --devices` covers both on a
+scripted backend.
 """
 import argparse
 import concurrent.futures
@@ -69,6 +75,7 @@ DIAL = {"Type": 0}
 PPM = {"Type": 1}
 BAR = {"Type": 2}
 EYE = {"Type": 3}
+VFD = {"Type": 4}
 
 # A transient: loud for 150 ms, then nothing, with the shot taken while the
 # movement is still going somewhere.
@@ -79,6 +86,7 @@ def moving(base, frames, burst=150):
     return d
 
 CONTEXT = {
+    # VU against the eye. The VFD's own picture is covered by its own rows.
     "Type": {"_high": 3},
     "Count": {},
     "Reference Level": DIAL,
@@ -126,6 +134,15 @@ CONTEXT = {
     "Back Green": dict(DIAL, **{"Background": 1}),
     "Back Blue": dict(DIAL, **{"Background": 1}),
     "Mix": dict(DIAL, **{"Background": 1}),
+
+    # The VFD. --out feeds it the harness's programme through feed(), so no
+    # device is opened. The Multiplex Rate is invisible to the eye by design
+    # (the drive normalises the time average), so it is swept through a
+    # camera, where it decides which columns each row caught.
+    "Bands": VFD,
+    "Shutter": VFD,
+    "Multiplex Rate": dict(VFD, **{"Shutter": 0.5}),
+    "Status Lamp": VFD,
 }
 
 
@@ -148,7 +165,7 @@ def parameters():
                  float(m.group(5)), float(m.group(6)))
             )
         else:
-            m = re.match(r"\s*(\d+)\s+(.+?)\s{2,}(about|text|buffer)\s", line)
+            m = re.match(r"\s*(\d+)\s+(.+?)\s{2,}(about|text|buffer|device)\s", line)
             if m:
                 found.append((int(m.group(1)), m.group(2).strip(), m.group(3), 0.0, 0.0))
     return found
@@ -242,6 +259,9 @@ def main():
             continue
         if kind == "buffer":
             skipped.append((name, "the host's spectrum; the harness injects it with --level"))
+            continue
+        if kind == "device":
+            skipped.append((name, "real audio devices; ndtest --devices covers it on a scripted backend"))
             continue
         if kind == "text" or name in SKIP:
             skipped.append((name, SKIP.get(name, "free text")))

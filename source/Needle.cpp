@@ -220,10 +220,11 @@ void NeedlePlugin::ApplyVisibility( bool raise )
 	//   Hold Decay    hold bar.
 	//   Persistence   the magic eye's phosphor.
 	//
-	// Standard and Type themselves are never hidden: hiding the control that
-	// brings a thing back leaves no way back (vectrix's rule). That is also
-	// why Standard heads the Ballistics group -- on Standard the group is that
-	// one switch, which says where the rest went.
+	// Type is never hidden, and Standard never on a meter: hiding the control
+	// that brings a thing back leaves no way back (vectrix's rule). That is
+	// also why Standard heads the Ballistics group -- on Standard the group is
+	// that one switch, which says where the rest went. On the VFD Standard is
+	// hidden with the rest of the ballistics, and Type is the way back.
 	const int       typeIndex = OptionIndex( PT_TYPE, kTypeCount );
 	const bool      vfd      = typeIndex == kTypeVfd;
 	const MeterType type     = static_cast< MeterType >( OptionIndex( PT_TYPE, kMeterTypeCount ) );
@@ -755,7 +756,7 @@ vfd::Picture NeedlePlugin::BuildVfdPicture( int width, int height ) const
 	p.field[ 1 ] = static_cast< float >( -0.5 * vfd::kFieldHMm * mm );
 	p.field[ 2 ] = static_cast< float >( pitchX * mm );
 	p.field[ 3 ] = static_cast< float >( vfd::kRowPitchMm * mm );
-	p.seg[ 0 ]   = static_cast< float >( pitchX * vfd::kSegFill * mm );
+	p.seg[ 0 ]   = static_cast< float >( pitchX * ( vfd::Neg().segFull ? 1.0 : vfd::kSegFill ) * mm );
 	p.seg[ 1 ]   = static_cast< float >( vfd::kSegHMm * mm );
 	for( int c = 0; c < vfd::kMaxColumns; ++c )
 	{

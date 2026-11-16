@@ -104,6 +104,7 @@ struct Negatives
 	bool wireCoreOnly  = false;///< F1: the wire's core without its oxide coat
 	bool wireTen       = false;///< F1: the wire ten times thick
 	bool willemite     = false;///< P1: the magic eye's green instead of ZnO:Zn
+	bool segFull       = false;///< G1: segments as wide as the column pitch
 	bool resetOnResize = false;///< R1: the hold forgotten when the raster changes
 	bool showAllOnVfd  = false;///< V1: every control shown on the VFD
 	bool menuByIndex   = false;///< D1: device elements valued by position

@@ -142,6 +142,7 @@ const NegativeEntry kNegatives[] = {
 	{ "wireCoreOnly", "--filament", "the wire's 24.5 um core without its oxide" },
 	{ "wireTen", "--filament", "the wire ten times thick" },
 	{ "willemite", "--phosphor", "the magic eye's willemite green instead of ZnO:Zn" },
+	{ "segFull", "--geometry", "segments as wide as the column pitch" },
 	{ "resetOnResize", "--resize", "the hold forgotten when the raster changes" },
 	{ "menuByIndex", "--devices", "device elements valued by position, not by name" },
 	{ "listAtConstruction", "--coreaudio", "woofer's shape: devices listed in the constructor" },
@@ -167,6 +168,7 @@ void ArmNegative()
 	n.wireCoreOnly    = NegIs( "wireCoreOnly" );
 	n.wireTen         = NegIs( "wireTen" );
 	n.willemite       = NegIs( "willemite" );
+	n.segFull         = NegIs( "segFull" );
 	n.resetOnResize   = NegIs( "resetOnResize" );
 	n.showAllOnVfd    = NegIs( "showAllOnVfd" );
 	n.menuByIndex     = NegIs( "menuByIndex" );
@@ -1392,6 +1394,118 @@ int runPhosphor()
 						 "(0.24, 0.41) within half a code value's spread (worst excess " + F( worstOff, 5 ) + "), " +
 							 F( s * 100.0, 1 ) + " % of the way from D65" );
 	}
+	return Done( before );
+}
+
+//---------------------------------------------------------------------------
+// --geometry (G1): every segment's edges where the spec's millimetres put them.
+//---------------------------------------------------------------------------
+namespace
+{
+/// One edge of a box drawn with needle's coverage, `clamp( 0.5 - d, 0, 1 )`.
+/// That ramp is exactly the overlap of a pixel with the half-plane behind an
+/// axis-aligned edge, so the coverage summed from a fully covered pixel out
+/// to the cell's end is the distance from that pixel's far side to the edge.
+/// `cov` holds the pixels of one cell along one axis, from index `lo`; `m` is
+/// a fully covered pixel. Returns the edge's coordinate and adds each
+/// partly covered pixel's half-code rounding to `tol`.
+double EdgeFrom( const std::vector< int >& code, int lo, int m, int dir, double& tol )
+{
+	double sum = 0.0;
+	for( int i = m; i >= lo && i < lo + static_cast< int >( code.size() ); i += dir )
+	{
+		const int g = code[ static_cast< size_t >( i - lo ) ];
+		sum += g / 255.0;
+		if( g > 0 && g < 255 )
+			tol += 0.5 / 255.0;
+	}
+	return dir < 0 ? ( m + 1 ) - sum : m + sum;
+}
+} // namespace
+
+int runGeometry()
+{
+	std::printf( "the segments: every edge where the spec's millimetres put it\n\n" );
+	const int    before = failures;
+	const double ref    = ReferenceDefault();
+	// Float positions near 1280 px carry 1.2e-4 px of rounding and the shader
+	// does a handful of operations on them: 1e-3 px covers that tenfold.
+	const double kFloatPx = 1e-3;
+	Host         host;
+	if( !host.Open() )
+		return 1;
+	struct Case
+	{
+		VfdBands bands;
+		bool     turned;///< Rotation +90 degrees: still axis-aligned, so edges are still sums
+	};
+	for( const VfdRaster& r : kVfdRasters )
+		for( Case k : { Case{ VfdBands::Thirds, false }, Case{ VfdBands::Octaves, false }, Case{ VfdBands::Thirds, true } } )
+		{
+			VfdRig rig( r, Programme( ref + 3.0, 0.0, kFeedRate ), k.bands, 0.0, [ & ]( Instance& i ) {
+				if( k.turned )
+					i.set( PT_ROTATION, 0.75f );
+			} );
+			rig.d->Settle( 1.5 );
+			const Image img = rig.Draw();
+			// Spec section 8 through the controls' own laws, and nothing from
+			// vfd::Picture: glass 30 mm tall at SizeFraction of the short side,
+			// a 93 x 24 mm field, segments 2.2/3 of the pitch wide and 1.5 mm
+			// tall on a 2 mm row pitch, the bottom row (no wire crosses it).
+			const int    n     = k.bands == VfdBands::Thirds ? 31 : 10;
+			const double mm    = SizeFraction( r.size ) * std::min( r.w, r.h ) * 0.5 / 30.0;
+			const double pitch = 93.0 / n * mm, rowPitch = 2.0 * mm;
+			const double segW = 93.0 / n * 2.2 / 3.0 * mm, segH = 1.5 * mm;
+			const double ly   = ( -12.0 + 11.5 * 2.0 ) * mm;
+			// Turned +90 degrees a local point (lx, ly) lands at (-ly, lx) from
+			// the centre: the shader's rotation, inverted by hand here.
+			const double cellX = k.turned ? rowPitch : pitch, cellY = k.turned ? pitch : rowPitch;
+			const double extX = k.turned ? segH : segW, extY = k.turned ? segW : segH;
+			double       worst = 0.0, tolMax = 0.0, wLo = 1e9, wHi = -1e9, hLo = 1e9, hHi = -1e9;
+			int          bad = 0, measured = 0;
+			for( int c = 0; c < n; ++c )
+			{
+				const double lx = ( -46.5 + ( c + 0.5 ) * 93.0 / n ) * mm;
+				const double cx = r.w * 0.5 + ( k.turned ? -ly : lx );
+				const double cy = r.h * 0.5 + ( k.turned ? lx : ly );
+				// The pixels whose centres lie in this cell, across and down.
+				const int x0 = static_cast< int >( std::ceil( cx - 0.5 * cellX - 0.5 ) );
+				const int x1 = static_cast< int >( std::ceil( cx + 0.5 * cellX - 0.5 ) ) - 1;
+				const int y0 = static_cast< int >( std::ceil( cy - 0.5 * cellY - 0.5 ) );
+				const int y1 = static_cast< int >( std::ceil( cy + 0.5 * cellY - 0.5 ) ) - 1;
+				// Turned, the glass is taller than a 16:9 raster: only the
+				// cells wholly on it are measured.
+				if( x0 < 0 || y0 < 0 || x1 >= r.w || y1 >= r.h )
+					continue;
+				++measured;
+				const int mx = static_cast< int >( std::floor( cx ) ), my = static_cast< int >( std::floor( cy ) );
+				std::vector< int > across, down;
+				for( int x = x0; x <= x1; ++x )
+					across.push_back( img.at( x, my )[ 1 ] );
+				for( int y = y0; y <= y1; ++y )
+					down.push_back( img.at( mx, y )[ 1 ] );
+				double tol = 0.0;
+				const double left = EdgeFrom( across, x0, mx, -1, tol ), right = EdgeFrom( across, x0, mx, +1, tol );
+				const double top = EdgeFrom( down, y0, my, -1, tol ), bottom = EdgeFrom( down, y0, my, +1, tol );
+				tol += kFloatPx;
+				const double e = std::max( { std::fabs( left - ( cx - 0.5 * extX ) ), std::fabs( right - ( cx + 0.5 * extX ) ),
+											 std::fabs( top - ( cy - 0.5 * extY ) ), std::fabs( bottom - ( cy + 0.5 * extY ) ) } );
+				const bool interior = img.at( mx, my )[ 1 ] == 255;
+				bad += ( !interior || e > tol ) ? 1 : 0;
+				worst  = std::max( worst, e );
+				tolMax = std::max( tolMax, tol );
+				wLo = std::min( wLo, right - left );
+				wHi = std::max( wHi, right - left );
+				hLo = std::min( hLo, bottom - top );
+				hHi = std::max( hHi, bottom - top );
+			}
+			Check( bad == 0 && measured >= std::min( n, 15 ),
+				   std::string( r.name ) + ", " + std::to_string( n ) + " columns" + ( k.turned ? ", turned 90 degrees" : "" ) +
+					   ": " + std::to_string( measured ) + " bottom segments' four edges within " + F( worst, 4 ) +
+					   " px of the spec's (limit the edge pixels' half-code rounding + 0.001 px of float, at most " +
+					   F( tolMax, 4 ) + "); " + F( wLo, 3 ) + " .. " + F( wHi, 3 ) + " x " + F( hLo, 3 ) + " .. " +
+					   F( hHi, 3 ) + " px against " + F( extX, 3 ) + " x " + F( extY, 3 ) );
+		}
 	return Done( before );
 }
 
