@@ -1442,7 +1442,11 @@ int runGeometry()
 	for( const VfdRaster& r : kVfdRasters )
 		for( Case k : { Case{ VfdBands::Thirds, false }, Case{ VfdBands::Octaves, false }, Case{ VfdBands::Thirds, true } } )
 		{
-			VfdRig rig( r, Programme( ref + 3.0, 0.0, kFeedRate ), k.bands, 0.0, [ & ]( Instance& i ) {
+			// The programme 22.5 dB under Reference (it tilts +-2 dB across the
+			// columns; an octave sums three thirds, +4.8 dB): between four and
+			// seven segments lit from the bottom and the top five always dark,
+			// so a mirrored or upside-down display cannot pass for this one.
+			VfdRig rig( r, Programme( ref - 22.5, 0.0, kFeedRate ), k.bands, 0.0, [ & ]( Instance& i ) {
 				if( k.turned )
 					i.set( PT_ROTATION, 0.75f );
 			} );
@@ -1587,6 +1591,11 @@ int runDevices()
 {
 	std::printf( "the device menu, the states and the lamp, on a scripted backend (no audio device is touched)\n\n" );
 	const int before = failures;
+	// NEEDLE_NO_DEVICES is for hosts: it refuses every device name, scripted
+	// or real, so inherited from verify.sh it would fail (d)-(i) -- and make
+	// menuByIndex look caught for the wrong reason. This backend opens
+	// nothing real; (j) sets the gate itself to prove it refuses.
+	unsetenv( "NEEDLE_NO_DEVICES" );
 	Host      host;
 	if( !host.Open() )
 		return 1;
