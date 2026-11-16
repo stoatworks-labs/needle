@@ -26,7 +26,29 @@
 	    --font        print every glyph
 	    --list        the fleet's parameter listing, for tools/sweep.py
 	    --pixels      the shader draws where the CPU said, at two rasters
-	    --bench       ms/frame at 720p, 1080p and 4K
+	    --bench       ms/frame at 720p, 1080p and 4K, and the VFD at 720p and 1080p
+
+	  The VFD (Type = VFD; Vfd.inc, specs/SPEC-needle-vfd.md):
+
+	    --iec         the bands are IEC 61260's: centres, labels, edges, and
+	                  sines through the running filters (no GL)
+	    --skirt       a sine lights its own column and its neighbours only by
+	                  the class 1 skirt, from earshot's output and the picture
+	    --octaves     the octaves summed from thirds meet the octave mask
+	    --hold        peak hold and fall in audio time: 24, 30, 60, 144 fps
+	                  agree, and the dot waits out a long note (no GL)
+	    --multiplex   the scan against a rolling shutter: a whole number of
+	                  scans is the eye's picture; a short one rolls
+	    --clock       499 000 s of host clock draws what 0 s draws
+	    --filament    the wires darken by exactly their width in pixels
+	    --phosphor    ZnO:Zn green, gamut-mapped along the line to D65
+	    --resize      a raster change mid-hold changes only the drawing
+	    --devices     the menu, the states and the lamp (scripted backend)
+	    --coreaudio   VFD off never reaches earshot, on the REAL backend
+	    --negative    every planted bug makes its check fail
+
+	  NDTEST_RENDERER=software runs any of it on Apple's software renderer;
+	  NDTEST_NEGATIVE=name plants one bug (see --negative).
 
 	    --out f.png [--size WxH] [--frames N] [--level dBFS] [--burst ms]
 	                [--set "Name=value" ...]
@@ -37,9 +59,10 @@
 	The fleet's frame format -- astable's `attest`, rosette's `rztest` -- so
 	one filming script can drive any of the FFGL plugins. needle is a
 	**source**: it declares no inputs and reads nothing, so there is no stdin
-	side. Frames are written until `--frames` is reached, or until the reader
-	closes the pipe if no count was asked for (or, with `--spectrum`, until the
-	spectrum runs out).
+	side. Frames are written until `--frames` is reached (or, with
+	`--spectrum`, until the spectrum runs out). A reader that closes the pipe
+	first ends the run with a message and exit 1 -- never SIGPIPE's silent 141,
+	the fleet's rule -- so `| head -c 1` exits 1 under bash.
 
 	    ndtest --pipe --width 1920 --height 1080 --fps 30 [--script cues.txt] \
 	           [--spectrum spectrum.txt] \
@@ -50,7 +73,14 @@
 	the last, and linearly interpolated between. An OPTION parameter (Type,
 	Count, Scale Style) is read by rounding, so key it one frame apart to cut.
 	A name that is not a parameter is refused rather than ignored, and so are
-	the Audio buffer and the About block, which are not values to automate.
+	the Audio buffer, the About block, Audio Input and Rescan Inputs, which are
+	not values to automate.
+
+	With Type = VFD the VFD's audio is the harness's programme -- a sine at
+	every third's centre, 9 dB of slow movement on each, `--level` the total
+	(each sine 14.9 dB under it) -- through earshot's `feed()` at the clip's
+	frame rate; `--burst` cuts it to silence. The scripted device backend is
+	installed, so nothing opens.
 
 	`--spectrum` is macroblock's format: one line per video frame, 64 numbers,
 	`#` for comments. Each line is written into the Audio buffer through
@@ -125,6 +155,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -134,11 +165,19 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+#include <earshot/earshot.h>
+#include <earshot/testing.h>
 
 #include "Font.h"
 #include "Needle.h"
@@ -147,6 +186,8 @@
 #include "meter/Standards.h"
 
 using namespace needle;
+
+extern char** environ;
 
 static int failures = 0;
 static void Check( bool ok, const std::string& what )
@@ -281,6 +322,24 @@ bool writePng( const std::string& path, int width, int height, const std::vector
 //---------------------------------------------------------------------------
 CGLContextObj createContext()
 {
+	// NDTEST_RENDERER=software: Apple's software renderer, by renderer id, so
+	// a check cannot pass on one rasteriser by accident.
+	const char* renderer = std::getenv( "NDTEST_RENDERER" );
+	if( renderer != nullptr && std::strcmp( renderer, "software" ) == 0 )
+	{
+		CGLPixelFormatAttribute sw[] = { kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
+										 kCGLPFARendererID, (CGLPixelFormatAttribute)kCGLRendererGenericFloatID,
+										 kCGLPFAColorSize, (CGLPixelFormatAttribute)24, (CGLPixelFormatAttribute)0 };
+		CGLPixelFormatObj       spix  = nullptr;
+		GLint                   snpix = 0;
+		CGLContextObj           sctx  = nullptr;
+		if( CGLChoosePixelFormat( sw, &spix, &snpix ) != kCGLNoError || spix == nullptr ||
+			CGLCreateContext( spix, nullptr, &sctx ) != kCGLNoError )
+			return nullptr;
+		CGLSetCurrentContext( sctx );
+		std::fprintf( stderr, "ndtest: GL renderer %s\n", reinterpret_cast< const char* >( glGetString( GL_RENDERER ) ) );
+		return sctx;
+	}
 	CGLPixelFormatAttribute attrs[] = { kCGLPFAOpenGLProfile,
 										(CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
 										kCGLPFAAccelerated,
@@ -1726,8 +1785,37 @@ int runVisible()
 	std::printf( "the inspector shows what the settings can reach\n\n" );
 
 	const unsigned int ruled[] = { PT_RISE, PT_FALL, PT_OVERSHOOT, PT_PEAK_HOLD, PT_HOLD_DECAY, PT_PERSISTENCE };
-	auto expected = []( unsigned int id, MeterType type, bool standard ) {
-		const bool movement = type == MeterType::Vu || type == MeterType::Eye;
+	// typeIndex 0..3 are the meters, kTypeVfd the VFD. The VFD's six act only
+	// on the VFD; on the VFD the meters' look and ballistics act on nothing.
+	auto expected = []( unsigned int id, int typeIndex, bool standard ) {
+		if( id >= PT_BANDS && id <= PT_STATUS_LAMP )
+			return typeIndex == kTypeVfd;
+		if( typeIndex == kTypeVfd )
+		{
+			switch( id )
+			{
+			case PT_COUNT:
+			case PT_BIN_LAW:
+			case PT_STANDARD:
+			case PT_RISE:
+			case PT_FALL:
+			case PT_OVERSHOOT:
+			case PT_PERSISTENCE:
+			case PT_FACE_R:
+			case PT_FACE_G:
+			case PT_FACE_B:
+			case PT_NEEDLE_R:
+			case PT_NEEDLE_G:
+			case PT_NEEDLE_B:
+			case PT_SCALE_STYLE:
+			case PT_LAMP:
+			case PT_GLASS:
+			case PT_WEAR: return false;
+			default: return true;
+			}
+		}
+		const MeterType type     = static_cast< MeterType >( typeIndex );
+		const bool      movement = type == MeterType::Vu || type == MeterType::Eye;
 		switch( id )
 		{
 		case PT_RISE:
@@ -1744,9 +1832,9 @@ int runVisible()
 		NeedlePlugin p;
 		bool         ok = true;
 		for( unsigned int id = 0; id < PT_COUNT_; ++id )
-			ok = ok && ( p.GetParamVisibility( id ) != 0 ) == expected( id, MeterType::Vu, true );
+			ok = ok && ( p.GetParamVisibility( id ) != 0 ) == expected( id, 0, true );
 		Check( ok, "out of the box (VU, Standard) Rise, Fall, Overshoot, Peak Hold, Hold Decay and "
-				   "Persistence are hidden, and nothing else is" );
+				   "Persistence are hidden, and so are the VFD's six; nothing else is" );
 		Check( p.GetNumPendingParamEvents() == 0, "and construction raises no events -- the host reads the "
 												  "surface it was born with" );
 	}
@@ -1765,7 +1853,7 @@ int runVisible()
 				p.SetFloatParameter( PT_TYPE, static_cast< float >( t ) );
 				const FFUInt32 n = p.ConsumeParamEvents( events, PT_COUNT_ );
 				for( unsigned int id = 0; id < PT_COUNT_; ++id )
-					if( ( p.GetParamVisibility( id ) != 0 ) != expected( id, static_cast< MeterType >( t ), standard != 0 ) )
+					if( ( p.GetParamVisibility( id ) != 0 ) != expected( id, t, standard != 0 ) )
 						++wrong;
 				for( unsigned int id : ruled )
 				{
@@ -1782,6 +1870,58 @@ int runVisible()
 						   "and Standard and Type never hidden (" + std::to_string( wrong ) + " wrong)" );
 		Check( silent == 0, "every change of Type or Standard raises FF_EVENT_FLAG_VISIBILITY for the "
 							"controls it rules (" + std::to_string( silent ) + " missing)" );
+	}
+
+	// The fifth Type. Every control's visibility changes when the VFD comes
+	// and goes, so every one must raise its event; Type is still never
+	// hidden. Standard is hidden on the VFD: it acts on nothing there, and
+	// Type, which is never hidden, is the way back to everything it rules.
+	{
+		NeedlePlugin p;
+		int          wrong = 0, silent = 0;
+		for( int standard = 1; standard >= 0; --standard )
+			for( int t : { kTypeVfd, 0, 2, kTypeVfd, 3, 1 } )
+			{
+				ParamEventStruct events[ PT_COUNT_ ];
+				p.ConsumeParamEvents( events, PT_COUNT_ );
+				bool before[ PT_COUNT_ ];
+				for( unsigned int id = 0; id < PT_COUNT_; ++id )
+					before[ id ] = p.GetParamVisibility( id ) != 0;
+				p.SetFloatParameter( PT_STANDARD, static_cast< float >( standard ) );
+				p.SetFloatParameter( PT_TYPE, static_cast< float >( t ) );
+				const FFUInt32 n = p.ConsumeParamEvents( events, PT_COUNT_ );
+				for( unsigned int id = 0; id < PT_COUNT_; ++id )
+				{
+					const bool now = p.GetParamVisibility( id ) != 0;
+					if( now != expected( id, t, standard != 0 ) )
+						++wrong;
+					if( now != before[ id ] )
+					{
+						bool raised = false;
+						for( FFUInt32 e = 0; e < n; ++e )
+							raised = raised || ( events[ e ].ParameterNumber == id &&
+												 ( events[ e ].eventFlags & FF_EVENT_FLAG_VISIBILITY ) != 0 );
+						silent += raised ? 0 : 1;
+					}
+				}
+				if( p.GetParamVisibility( PT_TYPE ) == 0 )
+					++wrong;
+			}
+		Check( wrong == 0, "to the VFD and back, Standard on and off: on the VFD the six VFD controls, Peak Hold, "
+						   "Hold Decay, Reference, Sensitivity and the Layout group are shown and nothing else; off "
+						   "it the six are hidden; Type never hidden (" + std::to_string( wrong ) + " wrong)" );
+		Check( silent == 0, "every control whose visibility changed raised FF_EVENT_FLAG_VISIBILITY (" +
+								std::to_string( silent ) + " missing)" );
+	}
+	{
+		NeedlePlugin p;
+		p.SetFloatParameter( PT_PEAK_HOLD, 0.5f );// on the VU, where it is hidden
+		p.SetFloatParameter( PT_BANDS, 1.0f );    // likewise
+		p.SetFloatParameter( PT_TYPE, static_cast< float >( kTypeVfd ) );
+		const vfd::DisplaySettings s = p.VfdSettings();
+		Check( std::fabs( s.holdSeconds - 2.5 ) < 1e-6 && s.bands == VfdBands::Octaves && p.GetParamVisibility( PT_BANDS ) != 0,
+			   "Peak Hold and Bands set on the VU, where both are hidden, are the VFD's the moment Type is VFD (" +
+				   F( s.holdSeconds, 3 ) + " s, " + ( s.bands == VfdBands::Octaves ? "10 Octaves" : "31 Thirds" ) + ")" );
 	}
 
 	// Hidden is not dead: a value set while hidden is kept, and read the
@@ -1858,10 +1998,17 @@ int runList()
 	for( unsigned int id = 0; id < PT_COUNT_; ++id )
 	{
 		const char* name = plugin.GetParamName( id );
-		if( id >= PT_ABOUT_TEXT )
+		if( id >= PT_ABOUT_TEXT && id < kAboutEnd )
 		{
 			std::printf( "%-4u %-22s %-9s %10s   %-16s %s\n", id, name ? name : "", "about", "-", "-",
 						 "the Stoatworks About block; not swept" );
+			continue;
+		}
+		if( id == PT_INPUT || id == PT_RESCAN )
+		{
+			std::printf( "%-4u %-22s %-9s %10s   %-16s %s\n", id, name ? name : "", "device", "-", "-",
+						 id == PT_INPUT ? "the VFD's capture device (values are earshot::deviceKey); --devices covers it"
+										: "re-lists devices, on the VFD only; --devices covers it" );
 			continue;
 		}
 		if( id == PT_AUDIO )
@@ -2190,6 +2337,8 @@ int runPixels()
 //---------------------------------------------------------------------------
 // --bench
 //---------------------------------------------------------------------------
+int benchVfd();// Vfd.inc
+
 int runBench()
 {
 	Host host;
@@ -2257,8 +2406,10 @@ int runBench()
 					 100.0 * best / ( 1000.0 / 60.0 ) );
 		t.Destroy();
 	}
-	return 0;
+	return benchVfd();
 }
+
+#include "Vfd.inc"
 
 //---------------------------------------------------------------------------
 // --out
@@ -2294,7 +2445,31 @@ int runOut( const std::string& path, int w, int h, int frames, double level, dou
 	}
 
 	i.inject( level );
-	const Image img = renderFrames( i, t, frames, burstMs >= 0.0 ? burstMs / 1000.0 : -1.0, level );
+	Image img;
+	if( i.plugin.IsVfd() )
+	{
+		// The VFD's audio is earshot's: the programme through feed(), a frame
+		// at a time, 60 fps as renderFrames runs.
+		VfdFeed feed;
+		feed.level             = level;
+		feed.stop              = burstMs >= 0.0 ? burstMs / 1000.0 : -1.0;
+		ProcessOpenGLStruct gl = {};
+		gl.HostFBO             = t.fbo;
+		for( int f = 0; f < std::max( 1, frames ); ++f )
+		{
+			feed.Before( i.plugin );
+			glBindFramebuffer( GL_FRAMEBUFFER, t.fbo );
+			glViewport( 0, 0, t.w, t.h );
+			glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
+			glClear( GL_COLOR_BUFFER_BIT );
+			glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+			i.plugin.SetTime( static_cast< double >( f ) / 60.0 );
+			i.plugin.ProcessOpenGL( &gl );
+		}
+		img = readBack( t );
+	}
+	else
+		img = renderFrames( i, t, frames, burstMs >= 0.0 ? burstMs / 1000.0 : -1.0, level );
 	if( !writePng( path, w, h, img.px ) )
 	{
 		std::printf( "could not write %s\n", path.c_str() );
@@ -2462,9 +2637,12 @@ struct PipeOptions
 int runPipe( const PipeOptions& o )
 {
 	// A reader that stops early would otherwise kill this process with
-	// SIGPIPE before the plugin is shut down. Ignored, so the write fails and
-	// the loop ends the ordinary way.
-	std::signal( SIGPIPE, SIG_IGN );
+	// SIGPIPE (141, and no word) before the plugin is shut down. Ignored, so
+	// the write fails and the run ends with a message and exit 1.
+	// NDTEST_NEGATIVE=pipe leaves SIGPIPE alone, to show verify.sh's check can
+	// tell the difference.
+	if( !NegIs( "pipe" ) )
+		std::signal( SIGPIPE, SIG_IGN );
 
 	if( o.width <= 0 || o.height <= 0 || !( o.fps > 0.0 ) )
 	{
@@ -2497,10 +2675,16 @@ int runPipe( const PipeOptions& o )
 		// Names to ids, once. The Audio buffer and the About block are not
 		// automatable values -- an About button that "moved" would open a
 		// browser -- so they are refused along with names that do not exist.
+		// So are Audio Input and Rescan Inputs: device controls, and the VFD's
+		// audio here is the harness's programme.
 		std::map< std::string, unsigned int > byName;
-		for( unsigned int id = 0; id < PT_AUDIO; ++id )
+		for( unsigned int id = 0; id < PT_COUNT_; ++id )
+		{
+			if( id == PT_AUDIO || ( id >= PT_ABOUT_TEXT && id < kAboutEnd ) || id == PT_INPUT || id == PT_RESCAN )
+				continue;
 			if( const char* name = i.plugin.GetParamName( id ) )
 				byName[ name ] = id;
+		}
 
 		for( const auto& kv : o.sets )
 		{
@@ -2548,6 +2732,9 @@ int runPipe( const PipeOptions& o )
 
 		ProcessOpenGLStruct gl = {};
 		gl.HostFBO             = t.fbo;
+		VfdFeed             vfdFeed;
+		vfdFeed.level = o.level;
+		vfdFeed.fps   = o.fps;
 		std::vector< unsigned char > raw( static_cast< size_t >( o.width ) * o.height * 4 );
 		std::vector< unsigned char > out( raw.size() );
 		const size_t                 row = static_cast< size_t >( o.width ) * 4;
@@ -2564,6 +2751,7 @@ int runPipe( const PipeOptions& o )
 					i.plugin.SetParamElementValue( PT_AUDIO, static_cast< unsigned >( b ), bins[ b ] );
 			}
 
+			vfdFeed.Before( i.plugin );
 			glBindFramebuffer( GL_FRAMEBUFFER, t.fbo );
 			glViewport( 0, 0, t.w, t.h );
 			glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
@@ -2595,7 +2783,11 @@ int runPipe( const PipeOptions& o )
 				written += static_cast< size_t >( put );
 			}
 			if( written < out.size() )
-				break;// the reader hung up; not a failure
+			{
+				std::fprintf( stderr, "ndtest: the reader closed the pipe after %d frame(s)\n", f );
+				status = 1;
+				break;
+			}
 		}
 	}
 	t.Destroy();
@@ -2611,9 +2803,44 @@ int main( int argc, char** argv )
 	bool                                                 pipe = false, framesGiven = false;
 	PipeOptions                                          po;
 
+	// Before any plugin exists: the planted bug, if any, and the scripted
+	// capture backend, so no check, render or sweep can open or even list a
+	// real device. --coreaudio alone runs the real backend: proving the
+	// plugin never reaches it with the VFD off is its whole point.
+	ArmNegative();
+	bool real = false;
+	for( int a = 1; a < argc; ++a )
+		real = real || std::string( argv[ a ] ) == "--coreaudio";
+	if( !real || NegIs( "listAtConstruction" ) )
+		vfd::Input::SetBackendFactoryForTest( ScriptedFactory );
+
 	for( int a = 1; a < argc; ++a )
 	{
 		const std::string arg = argv[ a ];
+		if( arg == "--iec" )
+			return runIec();
+		if( arg == "--skirt" )
+			return runSkirt();
+		if( arg == "--octaves" )
+			return runOctaves();
+		if( arg == "--hold" )
+			return runHold();
+		if( arg == "--multiplex" )
+			return runMultiplex();
+		if( arg == "--clock" )
+			return runClock();
+		if( arg == "--filament" )
+			return runFilament();
+		if( arg == "--phosphor" )
+			return runPhosphor();
+		if( arg == "--resize" )
+			return runResize();
+		if( arg == "--devices" )
+			return runDevices();
+		if( arg == "--coreaudio" )
+			return runCoreAudio();
+		if( arg == "--negative" )
+			return runNegatives( argv[ 0 ] );
 		if( arg == "--ballistics" )
 			return runBallistics();
 		if( arg == "--ppm" )
@@ -2700,6 +2927,9 @@ int main( int argc, char** argv )
 		"usage: ndtest --ballistics | --ppm | --steps | --eye | --prime | --rate\n"
 		"              --friction | --pair | --defaults | --free | --visible | --names\n"
 		"              --list | --font | --pixels | --bench\n"
+		"       ndtest --iec | --skirt | --octaves | --hold | --multiplex | --clock\n"
+		"              --filament | --phosphor | --resize | --devices | --coreaudio\n"
+		"              --negative                       the VFD (Type = VFD)\n"
 		"       ndtest --out f.png [--size WxH] [--frames N] [--level dBFS]\n"
 		"              [--burst MS] [--set Name=value ...]\n"
 		"       ndtest --pipe [--size WxH | --width W --height H] [--fps N] [--frames N]\n"

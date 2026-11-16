@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 #include <FFGLSDK.h>
@@ -130,8 +131,42 @@ enum ParamId : FFUInt32
 	PT_ABOUT_BUTTON_3,
 	PT_ABOUT_BUTTON_4,
 
+	// -- VFD (added after v0.1.2) ----------------------------------------------
+	// Appended after About rather than grouped with Meter: ids are never
+	// renumbered here, so a composition saved on v0.1.2 meets exactly the
+	// parameters it knew in the places it knew them. Shown only when Type is
+	// VFD (ApplyVisibility); the spec is specs/SPEC-needle-vfd.md.
+	PT_BANDS,      ///< 31 Thirds / 10 Octaves
+	PT_MULTIPLEX,  ///< the grid scan rate, Hz
+	PT_SHUTTER,    ///< 0: the eye; otherwise a camera's exposure
+	PT_INPUT,      ///< earshot capture device; values are earshot::deviceKey
+	PT_RESCAN,     ///< event: enumerate the devices again (VFD only)
+	PT_STATUS_LAMP,///< Off / On: woofer's lamp, drawn on the glass
+
 	PT_COUNT_
 };
+
+/// The About block's run ends where the VFD controls begin.
+constexpr FFUInt32 kAboutEnd = PT_BANDS;
+
+/// Type's elements. The first four are `MeterType` (the meter engine's own
+/// enum, which stays four long); the fifth is the VFD, which the engine never
+/// sees. Elements are append-only: a composition stores the number.
+constexpr int kTypeCount = 5;
+constexpr int kTypeVfd   = 4;
+
+/// Bands: the two layouts a hi-fi display used.
+enum class VfdBands : int
+{
+	Thirds = 0,///< 31 columns, 20 Hz .. 20 kHz
+	Octaves,   ///< 10 columns, 31.5 Hz .. 16 kHz, each the power sum of three thirds
+	Count
+};
+constexpr int kVfdBandsCount = static_cast< int >( VfdBands::Count );
+
+/// The device menu: None, System default, the devices, then "(none)" spares --
+/// a fixed number of elements, because FFGL cannot add any after construction.
+constexpr int kInputSlots = 16;
 
 /// How the host's spectrum values are to be read. Nobody in this fleet has ever
 /// measured which of these Resolume sends, so it is a control rather than a
@@ -249,6 +284,36 @@ inline float Offset( float v )
 inline float RotationRadians( float v )
 {
 	return ( v - 0.5f ) * 2.0f * 3.14159265358979323846f;
+}
+
+// ---------------------------------------------------------------------------
+// The VFD's controls. See specs/SPEC-needle-vfd.md for every number here.
+// ---------------------------------------------------------------------------
+
+/// Multiplex Rate: the grid scan, 50 Hz to 500 Hz geometrically. The default
+/// is **100 Hz**, Noritake's floor for a display with a 60 Hz filament supply
+/// (90 Hz with 50 Hz). 500 Hz keeps a 31-grid slot (64.5 us) above three times
+/// the 20 us blanking.
+inline double MultiplexHz( float v )
+{
+	return 50.0 * std::pow( 10.0, static_cast< double >( std::min( std::max( v, 0.0f ), 1.0f ) ) );
+}
+inline constexpr float kMultiplexDefault = 0.30103f;///< 100 Hz
+
+/// Shutter: 0 is the eye (the time average). Anything above is a camera's
+/// exposure, 1/24 s at the bottom of the travel to 1/8000 s at the top,
+/// geometrically -- pitch's range. Returns seconds, or 0 for the eye.
+inline double ShutterSeconds( float v )
+{
+	if( !( v > 0.0f ) )
+		return 0.0;
+	const double t = std::min( static_cast< double >( v ), 1.0 );
+	return ( 1.0 / 24.0 ) * std::pow( 24.0 / 8000.0, t );
+}
+/// The 0..1 value for an exposure in seconds (the inverse of ShutterSeconds).
+inline float ShutterParam( double seconds )
+{
+	return static_cast< float >( std::log( seconds * 24.0 ) / std::log( 24.0 / 8000.0 ) );
 }
 
 } // namespace needle

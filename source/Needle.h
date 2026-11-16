@@ -5,6 +5,8 @@
 #include "Clock.h"
 #include "Controls.h"
 #include "Render.h"
+#include "Vfd.h"
+#include "VfdRender.h"
 #include "meter/Engine.h"
 
 #include <FFGLSDK.h>
@@ -93,12 +95,36 @@ public:
 	/// tell the host when `raise` is set. See Controls.h, "Hidden is not dead".
 	void ApplyVisibility( bool raise );
 
+	// -- the VFD (Type 4; specs/SPEC-needle-vfd.md) --------------------------
+	/// Is Type the VFD? Read before anything consults the meter engine.
+	bool IsVfd() const;
+	/// What the VFD display is told this frame, in physical units.
+	vfd::DisplaySettings VfdSettings() const;
+	/// One VFD frame without GL: earshot run (the first call builds its
+	/// Engine and lists the devices), the display advanced. `ProcessOpenGL`
+	/// calls it on VFD frames only; nothing else does, so VFD off never
+	/// reaches earshot.
+	void AdvanceVfd( double hostSeconds );
+	/// The VFD picture the next frame would draw, without a context.
+	vfd::Picture BuildVfdPicture( int width, int height ) const;
+	vfd::Input&         VfdInput() { return mVfdInput; }
+	const vfd::Display& VfdDisplay() const { return mVfdDisplay; }
+
 private:
 	int OptionIndex( unsigned int param, int count ) const;
 
 	float mParams[ PT_COUNT_ ] = {};
 
 	Renderer mRenderer;
+
+	vfd::Input    mVfdInput;   ///< constructed here; touches no device until a VFD frame
+	vfd::Display  mVfdDisplay;
+	vfd::Renderer mVfdRenderer;///< compiled on the first VFD frame
+	double        mVfdSeconds   = 0.0;///< the host clock of the last VFD frame
+	int           mVfdMenuShown = 0;  ///< the Input list count the host was last told
+	int           mVfdWidth = 0, mVfdHeight = 0;
+	bool          mRescanHeld = false;
+	void          PublishVfdMenu( bool raise );
 	Clock    mClock;
 	Engine   mEngine;
 

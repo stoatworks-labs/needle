@@ -12,7 +12,7 @@
 
 namespace needle
 {
-static_assert( PT_COUNT_ - PT_ABOUT_TEXT == stoatworks::about::kParamCount,
+static_assert( kAboutEnd - PT_ABOUT_TEXT == stoatworks::about::kParamCount,
 			   "the About block's size changed with the generated header -- "
 			   "add or remove a PT_ABOUT_BUTTON_n to match" );
 
@@ -122,7 +122,9 @@ NeedlePlugin::NeedlePlugin()
 	// collapses runs -- so an id moved out of its run splits its group in two.
 
 	// -- Meter -----------------------------------------------------------------
-	option( PT_TYPE, "Type", { "VU", "PPM", "Bargraph", "Magic Eye" }, 0.0f );
+	// "VFD" is appended: option elements are stored as numbers, so they only
+	// ever grow at the end.
+	option( PT_TYPE, "Type", { "VU", "PPM", "Bargraph", "Magic Eye", "VFD" }, 0.0f );
 	option( PT_COUNT, "Count", { "Mono", "Stereo Pair" }, 0.0f );
 	standard( PT_REFERENCE, "Reference Level", kReferenceDefault );
 	standard( PT_SENSITIVITY, "Sensitivity", kSensitivityDefault );
@@ -177,7 +179,26 @@ NeedlePlugin::NeedlePlugin()
 		for( const auto& b : stoatworks::about::buttons() )
 			SetParamInfo( aboutId++, b.label, FF_TYPE_EVENT, false );
 	}
-	group( PT_ABOUT_TEXT, PT_COUNT_ - 1, "About" );
+	group( PT_ABOUT_TEXT, kAboutEnd - 1, "About" );
+
+	// -- VFD -------------------------------------------------------------------
+	// After About because ids are never renumbered (Controls.h). Declaring the
+	// device menu here lists NO devices: the menu holds only the entries that
+	// need no enumeration until the first VFD frame (SPEC-needle-vfd.md,
+	// "VFD off never touches CoreAudio").
+	option( PT_BANDS, "Bands", { "31 Thirds", "10 Octaves" }, 0.0f );
+	standard( PT_MULTIPLEX, "Multiplex Rate", kMultiplexDefault );
+	standard( PT_SHUTTER, "Shutter", 0.0f );
+	SetOptionParamInfo( PT_INPUT, "Audio Input", kInputSlots, 0.0f );
+	PublishVfdMenu( false );
+	// The keys are 23-bit integers; a host that clamps an option's value to
+	// its range must not clamp them.
+	SetParamRange( PT_INPUT, 0.0f, 8388608.0f );
+	mParams[ PT_INPUT ] = 0.0f;
+	SetParamInfo( PT_RESCAN, "Rescan Inputs", FF_TYPE_EVENT, false );
+	mParams[ PT_RESCAN ] = 0.0f;
+	option( PT_STATUS_LAMP, "Status Lamp", { "Off", "On" }, 1.0f );
+	group( PT_BANDS, PT_STATUS_LAMP, "VFD" );
 
 	// Hidden from the start, without raising events: the host reads the
 	// surface after construction, and vectrix (docs/NOTES.md there) measured
@@ -203,9 +224,11 @@ void NeedlePlugin::ApplyVisibility( bool raise )
 	// brings a thing back leaves no way back (vectrix's rule). That is also
 	// why Standard heads the Ballistics group -- on Standard the group is that
 	// one switch, which says where the rest went.
+	const int       typeIndex = OptionIndex( PT_TYPE, kTypeCount );
+	const bool      vfd      = typeIndex == kTypeVfd;
 	const MeterType type     = static_cast< MeterType >( OptionIndex( PT_TYPE, kMeterTypeCount ) );
-	const bool      free_    = !Bool( mParams[ PT_STANDARD ] );
-	const bool      movement = type == MeterType::Vu || type == MeterType::Eye;
+	const bool      free_    = !Bool( mParams[ PT_STANDARD ] ) && !vfd;
+	const bool      movement = !vfd && ( type == MeterType::Vu || type == MeterType::Eye );
 
 	auto show = [ & ]( unsigned int id, bool visible ) {
 		SetParamVisibility( id, visible, false );
@@ -217,9 +240,23 @@ void NeedlePlugin::ApplyVisibility( bool raise )
 	show( PT_RISE, free_ );
 	show( PT_FALL, free_ );
 	show( PT_OVERSHOOT, free_ && movement );
-	show( PT_PEAK_HOLD, type == MeterType::Bargraph );
-	show( PT_HOLD_DECAY, type == MeterType::Bargraph );
-	show( PT_PERSISTENCE, type == MeterType::Eye );
+	show( PT_PEAK_HOLD, ( !vfd && type == MeterType::Bargraph ) || vfd );
+	show( PT_HOLD_DECAY, ( !vfd && type == MeterType::Bargraph ) || vfd );
+	show( PT_PERSISTENCE, !vfd && type == MeterType::Eye );
+
+	// The VFD reads none of the meter's look and none of its ballistics: its
+	// level is earshot's Fast-weighted third, its colour is its phosphor. And
+	// the meters read none of the VFD's six. Type is never hidden, so every
+	// one of these has a way back.
+	const bool all = vfd && vfd::Neg().showAllOnVfd;
+	for( unsigned int id : { PT_COUNT, PT_BIN_LAW, PT_STANDARD, PT_FACE_R, PT_FACE_G, PT_FACE_B, PT_NEEDLE_R,
+							 PT_NEEDLE_G, PT_NEEDLE_B, PT_SCALE_STYLE, PT_LAMP, PT_GLASS, PT_WEAR } )
+		show( id, !vfd || all );
+	if( all )
+		for( unsigned int id : { PT_RISE, PT_FALL, PT_OVERSHOOT, PT_PERSISTENCE } )
+			show( id, true );
+	for( unsigned int id = PT_BANDS; id <= PT_STATUS_LAMP; ++id )
+		show( id, vfd );
 }
 
 FFResult NeedlePlugin::InitGL( const FFGLViewportStruct* vp )
@@ -261,6 +298,7 @@ FFResult NeedlePlugin::InitGL( const FFGLViewportStruct* vp )
 FFResult NeedlePlugin::DeInitGL()
 {
 	mRenderer.DeInitGL();
+	mVfdRenderer.DeInitGL();
 	mGlReady = false;
 	return FF_SUCCESS;
 }
@@ -276,8 +314,23 @@ FFResult NeedlePlugin::SetFloatParameter( unsigned int index, float value )
 {
 	if( index >= PT_COUNT_ )
 		return FF_FAIL;
-	if( index >= PT_ABOUT_TEXT )
+	if( index >= PT_ABOUT_TEXT && index < kAboutEnd )
 		return stoatworks::about::handleParam( index - PT_ABOUT_TEXT, value ) ? FF_SUCCESS : FF_FAIL;
+
+	if( index == PT_RESCAN )
+	{
+		// On the press, once (spasis's Rescan). Only while the VFD is drawn:
+		// listing devices starts CoreAudio, and VFD off never does.
+		const bool down = value >= 0.5f;
+		if( down && !mRescanHeld && mVfdInput.Rescan() )
+			PublishVfdMenu( true );
+		mRescanHeld      = down;
+		mParams[ index ] = value;
+		return FF_SUCCESS;
+	}
+	if( index == PT_INPUT )
+		mVfdInput.Want( value );// stored; acted on only on VFD frames
+
 	mParams[ index ] = value;
 
 	// Type and Standard decide what the inspector is even shown.
@@ -594,6 +647,25 @@ FFResult NeedlePlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 
 	AdvanceEngine( mClock.Seconds() );
 
+	// The VFD: its own audio, its own picture, its own program. Everything on
+	// the far side of this branch is v0.1.2's path, untouched.
+	if( IsVfd() )
+	{
+		if( vfd::Neg().resetOnResize && ( width != mVfdWidth || height != mVfdHeight ) )
+			mVfdDisplay.Reset();
+		mVfdWidth  = width;
+		mVfdHeight = height;
+		AdvanceVfd( mClock.Seconds() );
+		if( !mVfdRenderer.Ensure() )
+		{
+			diag::stateChanged( mTag + "vfd", mTag + "VFD: " + mVfdRenderer.Note() );
+			return FF_SUCCESS;
+		}
+		mVfdRenderer.Draw( BuildVfdPicture( width, height ), pGL->HostFBO );
+		return FF_SUCCESS;
+	}
+	mVfdInput.Deactivate();// closes a device the VFD opened; nothing if it never ran
+
 	// A meter that never moves is the commonest support question there is, and
 	// from the front it is indistinguishable from a broken plugin. One line per
 	// transition says which it is.
@@ -607,6 +679,158 @@ FFResult NeedlePlugin::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	const Frame frame = BuildFrame( width, height );
 	mRenderer.Draw( frame, pGL->HostFBO );
 	return FF_SUCCESS;
+}
+
+// ---------------------------------------------------------------------------
+// The VFD
+// ---------------------------------------------------------------------------
+bool NeedlePlugin::IsVfd() const
+{
+	return OptionIndex( PT_TYPE, kTypeCount ) == kTypeVfd;
+}
+
+void NeedlePlugin::PublishVfdMenu( bool raise )
+{
+	const auto& slots = mVfdInput.Slots();
+	for( int i = 0; i < kInputSlots && i < static_cast< int >( slots.size() ); ++i )
+		SetParamElementInfo( PT_INPUT, static_cast< unsigned int >( i ), slots[ static_cast< size_t >( i ) ].label.c_str(),
+							 slots[ static_cast< size_t >( i ) ].value );
+	mVfdMenuShown = mVfdInput.ListCount();
+	if( raise )
+		RaiseParamEvent( PT_INPUT, FF_EVENT_FLAG_ELEMENTS );
+}
+
+vfd::DisplaySettings NeedlePlugin::VfdSettings() const
+{
+	vfd::DisplaySettings s;
+	s.bands           = static_cast< VfdBands >( OptionIndex( PT_BANDS, kVfdBandsCount ) );
+	s.referenceDbfs   = ReferenceDbfs( mParams[ PT_REFERENCE ] );
+	s.trimDb          = TrimDb( mParams[ PT_SENSITIVITY ] );
+	s.holdSeconds     = PeakHoldSeconds( mParams[ PT_PEAK_HOLD ] );
+	s.fallDbPerSecond = HoldDecayDbPerSecond( mParams[ PT_HOLD_DECAY ] );
+	return s;
+}
+
+void NeedlePlugin::AdvanceVfd( double hostSeconds )
+{
+	mVfdInput.Activate();
+	if( mVfdInput.ListCount() != mVfdMenuShown )
+		PublishVfdMenu( true );
+
+	const vfd::DisplaySettings s = VfdSettings();
+
+	float bins[ audio::kBins ] = { 0.0f };
+	int   n                    = 0;
+	if( const ParamInfo* info = FindParamInfo( PT_AUDIO ) )
+	{
+		n = std::min( audio::kBins, static_cast< int >( info->elements.size() ) );
+		for( int i = 0; i < n; ++i )
+			bins[ i ] = info->elements[ static_cast< size_t >( i ) ].value;
+	}
+	mVfdDisplay.Advance( mVfdInput.Update( hostSeconds, bins, n ), s );
+	mVfdSeconds = hostSeconds;
+}
+
+vfd::Picture NeedlePlugin::BuildVfdPicture( int width, int height ) const
+{
+	vfd::Picture p;
+	p.width  = width;
+	p.height = height;
+
+	const double minDim = static_cast< double >( std::min( width, height ) );
+	const double mm     = SizeFraction( mParams[ PT_SIZE ] ) * minDim * 0.5 / vfd::kGlassHMm;
+	p.pxPerMm           = mm;
+	p.centre[ 0 ] = static_cast< float >( width * 0.5 + Offset( mParams[ PT_POS_X ] ) * minDim * 0.5 );
+	p.centre[ 1 ] = static_cast< float >( height * 0.5 + Offset( mParams[ PT_POS_Y ] ) * minDim * 0.5 );
+	p.rotation    = RotationRadians( mParams[ PT_ROTATION ] );
+	p.halfW       = static_cast< float >( 0.5 * vfd::kGlassWMm * mm );
+	p.halfH       = static_cast< float >( 0.5 * vfd::kGlassHMm * mm );
+	p.corner      = static_cast< float >( vfd::kCornerMm * mm );
+
+	const int cols = mVfdDisplay.Count();
+	p.cols         = cols;
+	p.rows         = vfd::kRows;
+	const double pitchX = vfd::kFieldWMm / cols;
+	p.field[ 0 ] = static_cast< float >( -0.5 * vfd::kFieldWMm * mm );
+	p.field[ 1 ] = static_cast< float >( -0.5 * vfd::kFieldHMm * mm );
+	p.field[ 2 ] = static_cast< float >( pitchX * mm );
+	p.field[ 3 ] = static_cast< float >( vfd::kRowPitchMm * mm );
+	p.seg[ 0 ]   = static_cast< float >( pitchX * vfd::kSegFill * mm );
+	p.seg[ 1 ]   = static_cast< float >( vfd::kSegHMm * mm );
+	for( int c = 0; c < vfd::kMaxColumns; ++c )
+	{
+		const bool on = c < cols && mVfdDisplay.At( c ).present;
+		p.lit[ c ]    = on ? static_cast< float >( mVfdDisplay.At( c ).lit ) : 0.0f;
+		p.dot[ c ]    = on ? static_cast< float >( mVfdDisplay.At( c ).dot ) : -1.0f;
+	}
+
+	double lin[ 3 ];
+	vfd::PhosphorLinear( lin );
+	if( vfd::Neg().willemite )
+	{
+		lin[ 0 ] = vfd::SrgbDecode( 0.36 );
+		lin[ 1 ] = vfd::SrgbDecode( 1.00 );
+		lin[ 2 ] = vfd::SrgbDecode( 0.46 );
+	}
+	for( int i = 0; i < 3; ++i )
+		p.phosphor[ i ] = static_cast< float >( lin[ i ] );
+
+	const double wireMm = vfd::Neg().wireCoreOnly ? 0.0245 : vfd::kWireMm * ( vfd::Neg().wireTen ? 10.0 : 1.0 );
+	for( int i = 0; i < vfd::kWires; ++i )
+		p.wireY[ i ] = static_cast< float >( ( -0.5 * vfd::kFieldHMm + vfd::kWireYMm[ i ] ) * mm );
+	p.wireW  = static_cast< float >( wireMm * mm );
+	p.wireX0 = p.field[ 0 ];
+	p.wireX1 = -p.field[ 0 ];
+
+	// The scan. Everything that grows with the clock is reduced to a phase in
+	// double here; the shader only ever adds a few scans to it.
+	const double f     = MultiplexHz( mParams[ PT_MULTIPLEX ] );
+	const double E     = ShutterSeconds( mParams[ PT_SHUTTER ] );
+	p.slot             = static_cast< float >( 1.0 / cols );
+	p.blank            = static_cast< float >( vfd::kBlankingSeconds * f );
+	p.pulse            = vfd::Neg().normFullSlot ? p.slot : static_cast< float >( 1.0 / cols - vfd::kBlankingSeconds * f );
+	p.camera           = E > 0.0 ? 1 : 0;
+	p.window           = static_cast< float >( E * f );
+	double rowStep     = vfd::kReadoutSeconds * f / std::max( 1, height );
+	double phase       = std::fmod( mVfdSeconds * f, 1.0 );
+	if( vfd::Neg().phaseFloat )
+	{
+		const float tf = static_cast< float >( mVfdSeconds );
+		phase          = std::fmod( static_cast< double >( tf * static_cast< float >( f ) ), 1.0 );
+	}
+	if( vfd::Neg().readoutUp )
+	{
+		phase += rowStep * height;
+		rowStep = -rowStep;
+	}
+	if( phase < 0.0 )
+		phase += 1.0;
+	p.phase0  = static_cast< float >( phase );
+	p.rowStep = static_cast< float >( rowStep );
+
+	// The lamp: woofer's colours.
+	p.lamp[ 0 ] = static_cast< float >( vfd::kLampXMm * mm );
+	p.lamp[ 1 ] = static_cast< float >( vfd::kLampYMm * mm );
+	p.lamp[ 2 ] = static_cast< float >( std::max( 1.5, vfd::kLampRMm * mm ) );
+	p.lamp[ 3 ] = OptionIndex( PT_STATUS_LAMP, 2 ) == 1 ? 1.0f : 0.0f;
+	auto set    = [ &p ]( float r, float g, float b ) {
+		p.lampColour[ 0 ] = r;
+		p.lampColour[ 1 ] = g;
+		p.lampColour[ 2 ] = b;
+	};
+	switch( mVfdInput.LampState() )
+	{
+	case vfd::Lamp::Red: set( 1.0f, 0.05f, 0.02f ); break;
+	case vfd::Lamp::RedBlink: set( std::fmod( mVfdSeconds, 1.0 ) < 0.5 ? 1.0f : 0.15f, 0.03f, 0.02f ); break;
+	case vfd::Lamp::Green: set( 0.15f, 1.0f, 0.25f ); break;
+	default: set( 1.0f, 0.62f, 0.05f ); break;
+	}
+
+	for( int i = 0; i < 3; ++i )
+		p.back[ i ] = mParams[ PT_BACK_R + static_cast< unsigned >( i ) ];
+	p.backAlpha = mParams[ PT_BACKGROUND ];
+	p.mix       = mParams[ PT_MIX ];
+	return p;
 }
 
 } // namespace needle

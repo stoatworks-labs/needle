@@ -56,6 +56,16 @@ set(FFGL_BUILD_EXAMPLE_PLUGINS OFF CACHE BOOL "" FORCE)
 add_subdirectory(external/ffgl EXCLUDE_FROM_ALL)
 
 # ---------------------------------------------------------------------------
+# earshot: the fleet's live-audio front end, for the VFD's third-octave bank
+# and its own capture. A snapshot (not a submodule) in external/earshot;
+# external/earshot/SNAPSHOT says which commit, and that it is unpatched. It
+# builds as a static library here; its own tools only build when it is the
+# top-level project. Nothing in the four meters calls it (source/Vfd.cpp is
+# the only file that does; verify.sh checks).
+# ---------------------------------------------------------------------------
+add_subdirectory(external/earshot EXCLUDE_FROM_ALL)
+
+# ---------------------------------------------------------------------------
 # Everything the plugin shares, as an OBJECT library.
 #
 # OBJECT and not STATIC on purpose. `CFFGLPluginInfo` registers itself from a
@@ -92,10 +102,16 @@ add_library(needle_core OBJECT
     source/Render.cpp
     source/Needle.h
     source/Needle.cpp
+    source/Vfd.h
+    source/Vfd.cpp
+    source/VfdShaders.h
+    source/VfdShaders.cpp
+    source/VfdRender.h
+    source/VfdRender.cpp
 )
 
 target_include_directories(needle_core PUBLIC source)
-target_link_libraries(needle_core PUBLIC ffgl::sdk)
+target_link_libraries(needle_core PUBLIC ffgl::sdk earshot::earshot)
 target_compile_definitions(needle_core PUBLIC NEEDLE_VERSION="${PROJECT_VERSION}")
 set_target_properties(needle_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
