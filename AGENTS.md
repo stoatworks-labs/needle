@@ -2,7 +2,8 @@
 
 An FFGL **source** plugin (`ND01`) that draws four audio meters — a VU, a peak
 programme meter, an LED bargraph and a magic eye — each moving the way its
-standard says it must.
+standard says it must. A fifth Type, a VFD spectrum analyser on earshot's
+third-octave bank, is built and unreleased: see "The VFD spectrum analyser".
 
 `CLAUDE.md` is the command reference; this file is the *why*.
 
@@ -57,6 +58,12 @@ them, and every one of them fails on v0.1.1's rule (checked by rebuilding with
 each old rule put back). All of `tools/verify.sh` passes. **None of it has been
 in Resolume**: the calibration is a better-grounded guess, not a measurement, and
 the hiding is vectrix's Arena result, not needle's.
+
+**The VFD (Type = VFD), 2026-11-16, unreleased.** Built on branch `claude/vfd`
+with every check below passing on this Mac, GPU and Apple's software renderer;
+the four meters render byte-identically to 840193c. Never in Resolume, never in
+any host with a real audio device, earshot never compiled by MSVC, and
+`ci.yml` runs none of its checks. See "The VFD spectrum analyser".
 
 ## The one idea
 
@@ -232,7 +239,8 @@ tracks to better than 1e-12 of full scale.
 This is the section the round was for. Every numeric check in the harness is
 listed with the reasoning for its tolerance, and the question asked of each is
 the same: *could this pass here and fail on a GPU-less runner, or at a different
-size?*
+size?* The VFD's checks answer it in their own table, under "The VFD spectrum
+analyser"; what follows is the four meters'.
 
 **The structural answer, first.** Every check group but `--pixels` opens **no GL
 context at all** — `--ballistics`, `--ppm`, `--steps`, `--eye`, `--prime`,
@@ -492,11 +500,235 @@ across.
   2026-09-23 they were hand copies with `guide=""`; the first real sync added
   the user-guide link, so the About block is now five entries (About text, User
   guide, Project page, Source on GitHub, Support the work) — `PT_ABOUT_BUTTON_4`
-  in `Controls.h` — and the plugin has 37 parameters (`ndtest --list`: 31
-  swept controls, the Audio buffer, and the About block). The `static_assert`
+  in `Controls.h` — and the plugin had 37 parameters (`ndtest --list`: 31
+  swept controls, the Audio buffer, and the About block). The VFD appends six
+  after it (ids 37–42), so there are 43: 35 swept, the Audio buffer, the About
+  block, and Audio Input and Rescan Inputs, which are never swept because they
+  reach real devices. The `static_assert`
   in `Needle.cpp` ties `Controls.h` to the generated header's `kParamCount`, so
   a future sync that changes the button count will not compile until
   `Controls.h` follows it. Never edit either file by hand.
+
+## The VFD spectrum analyser (Type = VFD)
+
+A fifth element of Type: a 1980s hi-fi vacuum-fluorescent spectrum display.
+The design, every source and the reasoning behind each number is
+`specs/SPEC-needle-vfd.md` (the Stoatworks specs folder, beside the repos);
+this section is what was built, what it measures, and what bit.
+
+**Unreleased.** On branch `claude/vfd`, 2026-11-16. No version bump, no
+release notes, never in a host with a real device, never in Resolume.
+
+### What it is
+
+- **The bank is earshot's**, an unpatched snapshot (`external/earshot/`,
+  `SNAPSHOT` names commit 8124191): IEC 61260 base-ten third-octave centres
+  x = −17 … 13, Butterworth band-pass with pre-warped edges, Fast (125 ms)
+  weighting, as many bands as fit under 0.95 Nyquist — 31 at 48 kHz, 30 at
+  44.1 kHz, where the 20 kHz column stays dark. Resolume's 64 bins are not
+  used: nobody knows what they are (Bin Law), and a linear 64-bin spectrum
+  has no bin inside the low thirds.
+- **Octaves** (Bands = 10 Octaves) are the power sum of three thirds, which
+  IEC 61260's base-ten midbands are designed to allow (IS 6964 note 1 to
+  3.5). Whether the sum meets the octave mask is measured (O1), not assumed.
+- **12 segments at 3 dB**, the bargraph's LM3915 step: the top one lights 3 dB
+  under Reference Level, the bottom 36 dB under. Reference Level and
+  Sensitivity keep their meanings.
+- **The peak hold** is the display's own, in earshot's audio time: the dot
+  stays while the bar reaches its segment, waits Peak Hold after the bar
+  leaves it, then falls at Hold Decay. Not earshot's `Third::holdDb` (traps,
+  below).
+- **The multiplexed scan**: one grid per column at the Multiplex Rate,
+  20 µs blanking (inside Noritake's 10–50 µs). The eye sees the time average,
+  so on the eye the rate changes nothing, by design. Shutter > 0 is a
+  rolling-shutter camera (pitch's row model, 16 ms readout): each row's
+  exposure catches its own slice of the scan, in closed form.
+- **Four filament wires**, 37.5 µm (Futaba US6803709's conventional filament:
+  24.5 µm core plus 2 × 6.5 µm oxide), drawn by exact box coverage, so they
+  are faint because they are thin.
+- **The phosphor** is Noritake's standard green, CIE (0.24, 0.41), taken to be
+  ZnO:Zn. It is outside sRGB, so it is mapped to the gamut boundary along the
+  line to D65 and normalised to a peak of 1: (0, 255, 198).
+- **The status lamp** (woofer's): green delivering, red Silent, red blinking
+  Missing or failed, amber on no device — and on amber the display is dark.
+- **Code**: `source/Vfd.*` (`vfd::Input`, the only code that calls earshot;
+  `vfd::Display`; `vfd::Picture`), `source/VfdShaders.cpp` (its own program,
+  so `Shaders.cpp` and the demo's copy are untouched), `source/VfdRender.*`,
+  and `NeedlePlugin`'s VFD branch. The meter engine never sees Type 4.
+
+### Devices and CoreAudio
+
+- **VFD off never touches CoreAudio**, not even to list devices (rubens found
+  earshot's lookup starts CoreAudio for a name it then fails to match). The
+  Engine, the device list and any open happen on the first VFD frame, never in
+  the constructor. With the VFD off the Audio Input menu is None, System
+  default and fourteen "(none)", and a saved device key waits.
+- **A device opens only when the user picks one.** Leaving the VFD closes it;
+  coming back reopens it. Rescan Inputs lists again, and only on the VFD.
+- **Menu values are `earshot::deviceKey(name)`**, so a composition remembers a
+  device by name, whatever order the machine lists them in.
+- `NEEDLE_NO_DEVICES=1` skips listing and refuses a device name before
+  earshot sees it. verify.sh sets it for oxbow and the sweep, and for every
+  VFD check except `--coreaudio`, which needs the real path to prove it is
+  never taken. `--devices` clears it for itself (its backend is scripted, and
+  its case (j) sets the gate to prove the refusal).
+
+### The checks, and would each hold on another rasteriser, at another raster?
+
+Audio goes in through earshot's `feed()` on a scripted capture backend
+(`tools/ndtest/Vfd.inc`), so no check lists or opens a real device. Every
+picture check runs at 1280×720 and at 320×180 (Size 1), and verify.sh runs
+each on the GPU and on Apple's software renderer (`NDTEST_RENDERER=software`,
+renderer chosen by id): every one passed on both, most with identical numbers.
+Every check has a negative control (`ndtest --negative`: 20 of 20 caught).
+Expected values come from the standard, the sources or the spec's millimetres,
+and the measured side from earshot's output or the picture: never a second
+copy of the formula under test.
+
+| Check | Measured (2026-11-16) | Tolerance, and where it comes from | Another rasteriser, another raster? | Negative control |
+|---|---|---|---|---|
+| I1 `--iec` (no GL): centres, labels, edges | worst centre 0.377 units of Table A.1's fifth figure; 0 labels wrong; edges within 47.9e-9 relative | half a unit of the printed figure; 1.2e-7, float's rounding (the Frame carries float) | No GL and no raster: it cannot depend on either | earshot `thirdBase2` |
+| I1: a sine at each exact midband, in its own band | worst 0.001 dB (48 kHz), 0.006 dB (44.1 kHz) | 0 ± 0.3 dB, class 1 at Ω = 1 (IS 6964 Table B.1); averaged over whole Fast ripple periods, so the 2 kHz ripple is not in the number | No GL | earshot `thirdNoPrewarp` |
+| I1: a sine at each shared edge, in both bands | 3.010 dB down, all 62 (48 kHz) and 60 (44.1 kHz) | 2.0–5.0 dB, class 1 at the edge (Table B.1) | No GL | as above |
+| I2 `--skirt`: earshot's neighbours | least margins: k±1 1.50 dB, k±2 3.70 dB, k±3 2.61 dB | the class 1 minimum at Ω = G^(1/3), G^(2/3), G: 14.488, 30.759, 44.299 dB, from Table B.1's breakpoints by eq. (12), linear in lg Ω | No GL in this half | earshot `thirdOrder2` |
+| I2: the picture, every segment probed | own column 12 lit (31/31); 0 over the mask, 0 off the segment law, both rasters | counts: no tolerance. Each probe sits a quarter of a segment below its centre, inside it by 1.1 px at 320×180 and 2.8 px at 1280×720, so coverage at the probe is 1 on any rasteriser | Yes: a probe is a flat interior, the threshold is half scale against 0 or 255 | `shift` (column c shows band c + 1) |
+| I2 at 44.1 kHz | the 20 kHz column dark, the 16 kHz column full | counts | as above | — |
+| O1 `--octaves` | own octave worst 0.128 dB; neighbours ≥ 35.90 dB down; 20 edge readings 2.997–3.010 dB; picture 0 wrong | 0 ± 0.3 dB, ≥ 17.5 dB, 2.0–5.0 dB: IS 6964 Table 1, class 1 | earshot's half has no GL; the picture is counts at flat interiors | `amplitudeSum`, `octaveWrong` |
+| H1 `--hold` (no GL): 24, 30, 60 fps against 144 fps at 30 common audio times | 0.0028, 0.3000, 0.1000 dB | Hold Decay × one frame + the 2 kHz ripple, 10·lg(1 + r), r = 1/√(1 + (4πfτ)²): 0.5028, 0.4028, 0.2028 dB | No GL. And not the frame rate either: that is what it measures | `holdInFrames` |
+| H1: how long the dot held after the bar left it | 1.4931, 1.4833, 1.4667, 1.4583 s (144, 60, 30, 24 fps) | Peak Hold 1.5 s ± one frame: the leave is seen on a frame | No GL | `holdNoWait`, `holdAtPeakOnly` |
+| H1: the fall's slope | 12.000000 dB/s at every rate | Hold Decay within 1e-6: it is Hold Decay × dt in double | No GL | as above |
+| H2 `--hold`: an 8 s note | the hold never dropped a frame before the bar left it (0.000000 dB); then waited 1.493, 1.483, 1.467, 1.458 s | no drop at all; Peak Hold less one frame at least | No GL | `holdAtPeakOnly` (waits 1.375–1.433 s) |
+| M1 `--multiplex`: a 2-scan exposure is the eye's picture | 0 code values different, 372/372 segments lit, both rasters | ±1 code value, the float-to-8-bit step | Yes: the claim is a ratio of closed-form overlaps that is exactly 1 for a whole number of scans; no coverage is involved beyond what both pictures share | `normFullSlot` |
+| M2: 1/8000 s, the lit column advances down the picture | 0.06864 columns a row at 1280×720 (want Tr·N·f/H = 0.06889, limit ±0.00867); 0.27554 at 320×180 (want 0.27556, ±0.02113); never more than 2 columns lit in a row | each row's centroid can sit half a column off; a least-squares slope over rows spanning L moves at most 3e/L for errors bounded by e | Yes: the expected slope is computed for the raster in hand, and the tolerance scales with it | `readoutUp` |
+| M3 `--clock`: host 499 000 s draws what host 0 s draws | 0 code values, both rasters, while consecutive frames differ by 132 390 and 30 240 subpixels | ±1 code value. At Multiplex Rate 500 Hz (the top of the travel, exactly) both clocks are whole numbers of scans | Yes: two pictures from one rasteriser compared with each other | `phaseFloat` |
+| F1 `--filament`: darkening summed over the rows a wire crosses | 0.2769 px against 0.2779 at 1280×720 (37.5 µm × 7.410 px/mm); 0.1054 against 0.1125 at 320×180 | the rows' 8-bit rounding, summed: at most 0.0126 and 0.0176 px | Yes: box coverage is exact on any rasteriser that samples pixel centres, and the limit is the rows' own rounding | `wireCoreOnly`, `wireTen` |
+| P1 `--phosphor`: a lit interior's chromaticity | (0, 255, 198) in all 31 columns; xy (0.2455, 0.4039), on the D65 line with 0 excess, 92.5 % of the way to (0.24, 0.41) | half a code value in each channel, propagated to xy | Yes: an interior pixel is the encoded constant, no coverage | `willemite` |
+| G1 `--geometry`: the bottom segment's four edges in every column, both layouts | within 0.0020 px of the spec's millimetres | each partly covered pixel's half-code rounding, + 0.001 px of float: at most 0.0088 px | Yes, and this is the one that asked: the GPU measured 6.596 px for a 6.600 px segment at 320×180, the software renderer 6.600–6.604; both inside. The coverage ramp is exactly a pixel's overlap with a half-plane, so the sum is the edge's position on any rasteriser that samples pixel centres | `segFull` |
+| R1 `--resize`, both directions mid-hold | every column's bar and dot equal a fresh run at the new raster, and the picture byte-identical | exact | Compared with a fresh render on the same rasteriser | `resetOnResize` |
+| D1 `--devices` (a)–(j) | the menu before and after the first VFD frame, keys by name, each state and lamp colour, Rescan, leaving and returning, a saved key, `NEEDLE_NO_DEVICES` | flags and colours from the plugin's constants; the lamp probe is its flat centre | Yes, at both rasters and on both renderers | `menuByIndex` |
+| C1 `--coreaudio` (real backend) | VU, PPM, bargraph and eye, every control at 0, 1 and 0.5, Audio Input set to two keys, Rescan pressed, 20 frames: Engines 0, lists 0, selects 0 | must be 0 | Counters, not pixels | `listAtConstruction` |
+| V1 `--visible` | to the VFD and back: every visibility change raises its event; a control set while hidden is read when shown | exact | No GL | `showAllOnVfd` |
+| X1 `--pipe` (verify.sh, bash) | `\| head -c 1` exits 1 with "the reader closed the pipe after 0 frame(s)"; a 3-frame VFD clip is exactly 691 200 bytes | exact | — | `NDTEST_NEGATIVE=pipe` gives 141 |
+
+**Cost** (`ndtest --bench`, arm64, fastest of five passes of 200 frames): the
+VFD 0.583 ms/frame at 1280×720 and 0.593 at 1920×1080, the meters 0.015 and
+0.013. Flat across rasters, so it is earshot's analysis and the harness's
+`feed()`, not the shader. Apple Silicon only.
+
+**C1 counts calls at earshot's three CoreAudio-capable entry points**
+(Engine built, devices listed, device selected) inside `vfd::Input`, and
+verify.sh greps that nothing else in `source/` includes earshot. Nothing
+observes CoreAudio from outside the process: dtrace needs root. That is the
+limit of the claim.
+
+**Existing behaviour, measured.** The origin/main build (840193c) and this
+branch rendered 72 VFD-off scenes (four Types × nine settings × 1280×720 and
+320×180) byte-identical on the GPU, and the same 36 at 320×180 byte-identical
+on Apple's software renderer (the baseline built with the same
+`NDTEST_RENDERER` switch, harness-only). Every pre-existing verify.sh step is
+unchanged and passes.
+
+### The mutants (`tools/mutate.sh`)
+
+One character of `source/VfdShaders.cpp` changed per run, rebuilt, and run
+against the check that must notice, under a 300 s perl alarm (a hang counts as
+caught). Run 2026-11-16, arm64:
+
+| Mutant (one character) | What it means | Caught by |
+|---|---|---|
+| `float g = 1.0;` → `2.0` | the eye's segments twice as bright | `--phosphor` (3 assertions) |
+| `clamp( p - floor( p ) - a, 0.0, w )` → `…, a )` | the grid's pulse as long as its start time | `--multiplex` (3) |
+| `floor( f.y ) * uScan.z` → `f.x` | the rolling shutter rolls across the columns | `--multiplex` (3) |
+| `uScan.w * uSlot.z` → `uSlot.x` | the camera normalised by the slot, not the pulse | `--multiplex` (3) |
+| `uScan.x > 0.5` → `<` | the camera model applied to the eye | `--multiplex` (5) |
+| `max( y - 0.5, …` → `y - 0.6` | the pixel row's box 0.1 px too tall in the wire cover | `--filament` (2) |
+| `wireCover( p.y, …` → `p.x` | the wires covered by x, not y | `--filament` (3) |
+| `pow( l, 1.0 / 2.4 )` → `2.2` | a 2.2 power instead of the sRGB curve | `--phosphor` (3) |
+| `uGrid.y - 1 - row` → `- 2 -` | every bar one segment high | `--skirt` (4) |
+| `floor( q.x / uField.z )` → `q.y` | columns found from y | `--skirt` (4) |
+| `vec3( 1.0 )` → `vec3( 0.0 )` in the clip | every lit segment black | `--skirt` (4) |
+| glass `vec3( 0.0 )` → `vec3( 1.0 )` | the glass white | `--skirt` (4) |
+| `length( p - uLampA.xy ) - uLampA.z` → `+` | the status lamp drawn inside out (invisible) | `--devices` (12) |
+| `-d.x * sn` → `+d.x * sn` | the rotation's sign: a turned display mirrored | `--geometry` (3) |
+| `0.5 * uSeg` → `0.6 * uSeg` | every segment 20 % larger | `--geometry` (7) |
+| `+ 0.5 ) * uField.zw` → `+ 0.6` | every segment a tenth of a cell off centre | `--geometry` (7) |
+| a space before a `;` | a no-op edit, which must NOT be caught | `--skirt` passes, as it must |
+
+17 of 17 behaved as expected.
+
+The lit-segment test (`fromBottom < uLit[ col ] - 0.5 || ...`) is not mutated:
+the table is split on `|`, and a `||` inside a mutant silently becomes an empty
+field. Two of these were missed on the first run and are why `--geometry`
+exists: a segment 20 % larger, and the rotation's sign (no VFD check turned the
+display). The rotation's sign then passed the first `--geometry` too, because
+with every segment lit the turned display is symmetric: a mirror of it is
+itself. The check now lights only the lower segments.
+
+### Traps hit building it
+
+- **earshot primes each third's Fast envelope with the first update's whole
+  block**, so the onset depends on how much audio the first frame carried. A
+  1 kHz tone from sample 0 read 0.90 dB apart at 167 ms between 24 fps (a
+  2000-sample first block) and 144 fps (333 samples), 0.20 dB at 333 ms,
+  0.05 dB at 500 ms and 0.0008 dB from 1 s on. `--hold` starts its tone after a
+  quarter second of silence, so every rate primes on zeros. A real display meets
+  this only for the first half second after the VFD is chosen.
+- **earshot's `Third::holdDb` starts its wait at the level's last maximum** (it
+  restarts only when the level is ≥ the hold value). At the end of a note that is
+  before the bar falls out of the dot's 3 dB segment, so the dot drops early by
+  however long the bar took to leave: measured on earshot's own hold (1.0 s) in
+  the `--hold` run, it began to fall 0.910–0.967 s after the bar left the dot;
+  with that rule in the display (`holdAtPeakOnly`) the dot held 1.375–1.433 s of
+  a 1.5 s Peak Hold. **The first reading of it was wrong** and is recorded so
+  nobody repeats it: that a held note's ripple would make "≥ the hold" ever
+  rarer, so earshot's hold would time out during the note. Measured, it did not
+  (0.00 dB fallen 0.5 s after an 8 s note): at these frame rates a frame samples
+  the 2 kHz ripple at a few fixed phases, so the maximum recurs exactly.
+  earshot is not patched.
+- **The level is still settling through the first second of a note** (the Fast
+  envelope: 0.05 dB between 0.5 s and 2.8 s), so "peak minus hold" during a note
+  reads the rise as a sag. H2 measures frame-to-frame drops instead.
+- **make compares mtimes to the second.** The first mutant after the clean
+  build ran the old binary and was "missed", twice. `mutate.sh` deletes the
+  object and the binary before every build.
+- **earshot's mutations must be set before the stream begins**: the bank is
+  designed in `feedBegin`, so a mutation set afterwards changes nothing and its
+  negative control "passes". `ArmEngine` sets them right after the Engine is
+  built. Likewise a check at 44.1 kHz needs its own engine: re-feeding a 48 kHz
+  engine at 44.1 kHz describes the old bank.
+- **`--level` for the VFD is the programme's total**, 31 sines each
+  10·lg 31 = 14.9 dB under it. Each at `--level` lit every column to the top.
+- **`CFFGLPlugin::FindParamInfo` is protected**; element values are read back
+  through the public `GetParamElementDefault` (woofer's pattern).
+- **FFGL cannot add elements after construction**, so Audio Input has a fixed
+  16 slots with "(none)" spares, renamed in place, and the plugin raises
+  `FF_EVENT_FLAG_ELEMENTS` when the list changes. Whether Resolume honours that
+  event has not been seen.
+- **`NEEDLE_NO_DEVICES` refuses scripted devices too.** Inherited from
+  verify.sh, it failed `--devices` (d)–(i) on the first full run, and would
+  have made `menuByIndex` look caught for the wrong reason. `--devices` now
+  clears it for itself.
+- **The Multiplex Rate default, 0.30103, is 100.00001 Hz**, not a whole number
+  of scans a second. `--clock` uses 500 Hz, the top of the travel, exactly.
+- **IS 6964 eq. (12) specifies linear interpolation in lg Ω** between Table
+  B.1's breakpoints. earshot's own check calls that "our reading, an
+  assumption"; it is the standard. A doc note for earshot, not made here.
+- **`--pipe` on v0.1.2's harness exited 0 when its reader hung up** (measured on
+  the 840193c build). The fleet's rule is 1, never 141, and it is 1 now.
+
+### Design decisions, made rather than asked
+
+- **Dark on no device.** With no device chosen the VFD shows nothing and the
+  lamp is amber. Inventing thirds from 64 unmeasured bins is what Bin Law
+  exists to avoid.
+- **Appended, not grouped.** The six controls sit after the About block, ids
+  37–42, so a v0.1.2 composition meets exactly the ids it knew.
+- **Peak Hold and Hold Decay are reused**, shown on the VFD and the bargraph,
+  with the same defaults. No source gave a VFD hold time.
+- **Shutter is one control** and the readout is fixed at pitch's 16 ms: without
+  a camera the scan is invisible and Multiplex Rate would be dead.
+- **The geometry is a design**, not a product's drawing: glass 100 × 30 mm,
+  field 93 × 24 mm, segments 2.2 × 1.5 mm, wires across rows 1, 4, 7 and 10.
 
 ## Open questions
 
@@ -515,6 +747,22 @@ across.
 - **Whether four instruments in one plugin is right**, or whether the bargraph
   and the eye want to be their own sources with their own controls. As it stands
   a third of the parameters do nothing on any given Type.
+- **The VFD, before it ships** (each is Allan's call):
+  - dark with an amber lamp when no device is chosen: enough, or should it say
+    more?
+  - its six controls sit below About because of the append rule; Controls.h
+    says ids may move. Keep, or move them up in a release?
+  - `ATTRIBUTIONS.md` and `StoatworksAbout.h` are generated and do not yet name
+    earshot or miniaudio: stoatworks-backend's sync has to add them;
+  - earshot has never been compiled by MSVC, so the public Windows CI job would
+    be its first, and `ci.yml` runs none of the VFD checks;
+  - pushing this branch publishes the earshot snapshot in a public repo;
+  - whether Resolume honours `FF_EVENT_FLAG_ELEMENTS` (Rescan refreshing the
+    menu), and what the macOS microphone prompt looks like inside Resolume;
+  - `ToOption`'s normalised path (a host sending 0..1 for an option) maps Type
+    differently with five elements than four. Resolume sends element values,
+    which are unchanged; a host that sends normalised values would see Type
+    shift.
 
 ## The browser demo
 
@@ -606,8 +854,15 @@ hold bar) and the magic eye rendered as a stereo pair on the ramp.
     source/Render.*           one triangle into the host's framebuffer.
     source/Needle.*           the plugin: parameters, layout, the frame path.
     source/Diag.*             a log file, for the meter that never moves.
+    source/Vfd.*              the VFD: vfd::Input (the only caller of earshot),
+                              vfd::Display (columns, segments, the hold),
+                              vfd::Picture (pixels, on the CPU).
+    source/VfdShaders.cpp     the VFD's own fragment shader.
+    source/VfdRender.*        its program, compiled on the first VFD frame.
+    external/earshot/         an unpatched earshot snapshot (SNAPSHOT).
     source/{Clock,Font}.*     carried from graticule.
-    tools/ndtest/             the offline harness.
+    tools/ndtest/             the offline harness (Vfd.inc: the VFD's checks).
+    tools/mutate.sh           one-character mutants of the VFD shader.
     tools/sweep.py            no control is silently dead.
     tools/verify.sh           all of it.
     demo/                     the browser demo: plugin.js (shaders verbatim,

@@ -270,6 +270,61 @@ borrows the VU's.
 
 ---
 
+## The VFD spectrum analyser (not yet released)
+
+![A VFD spectrum display: 31 blue-green columns with peak dots](vfd.png)
+
+*31 third-octave columns on programme, rendered by `ndtest`.*
+
+The fifth **Type** is a 1980s hi-fi spectrum display: a vacuum fluorescent tube with a column of
+segments per band, lit one column at a time by a multiplexed scan and seen through the filament
+wires that cross the glass. It is in the source but not in a release, and it has never been in
+Resolume, so treat everything here as a description of what's coming.
+
+**It listens to an audio device, not to Resolume.** Resolume's 64-bin spectrum can't make a
+third-octave display (nobody knows what the bins are, and a 64-bin linear spectrum has no bin
+inside the low bands), so the VFD analyses audio itself, through the Stoatworks earshot library,
+from the device you pick in **Audio Input**. Until you pick one the display is dark and the status
+lamp is amber. Nothing is listed or opened until you switch Type to VFD: on the other four Types the
+plugin never touches your audio hardware. The first time a device is opened, macOS should ask
+whether Resolume may use the microphone (the plugin runs inside Resolume, so the prompt names
+Resolume); that hasn't been tried yet.
+
+What you see:
+
+- **31 Thirds** (20 Hz to 20 kHz, IEC 61260 class 1 bands) or **10 Octaves** (31.5 Hz to 16 kHz,
+  each the power sum of three thirds), chosen by **Bands**. At a 44.1 kHz device the 20 kHz column
+  stays dark: that band doesn't fit below Nyquist.
+- **12 segments, 3 dB apart.** The top one lights 3 dB under **Reference Level**, the bottom one
+  36 dB under it; **Sensitivity** trims as on the meters.
+- **A peak dot** per column that stays **Peak Hold** seconds after the bar drops away from it, then
+  falls at **Hold Decay**. Peak Hold at zero draws no dots.
+- **The phosphor** is the standard VFD blue-green, ZnO:Zn, as close as sRGB can show it.
+- **Filament wires**: four horizontal lines across the lit segments, 37.5 µm thick, so they are
+  faint because they are thin.
+- **A status lamp** at the top right (**Status Lamp** turns it off): green while the device
+  delivers, red when it's open but silent, blinking red when the chosen device is missing, amber
+  when no device is chosen.
+
+The controls the VFD adds, shown only when Type is VFD:
+
+- **Bands**: 31 Thirds or 10 Octaves.
+- **Audio Input**: None (host FFT), System default, then up to fourteen devices by name. A
+  composition remembers the device by its name, so it comes back even if the machine lists its
+  devices in another order. **Rescan Inputs** lists the devices again (for a device
+  plugged in after you chose VFD).
+- **Multiplex Rate** (50–500 Hz, default 100 Hz) and **Shutter**: the tube lights one column at a
+  time, very fast. To the eye that's invisible, so at Shutter 0 (the eye) Multiplex Rate changes
+  nothing on screen, by design. Turn Shutter up and you see the display as a camera with a rolling
+  shutter would, from 1/24 s to 1/8000 s: a short shutter catches diagonal slices of the scan, and a
+  shutter that's a whole number of scans long shows the steady picture again.
+- **Status Lamp**: Off or On.
+
+On the VFD, Count, Bin Law, the ballistics and the Look group are hidden, because the VFD reads
+none of them; Reference Level, Sensitivity, Peak Hold, Hold Decay and the Layout group still apply.
+
+---
+
 ## How it works
 
 Once per frame Needle reads Resolume's 64-bin spectrum, takes a level from the RMS over every bin
@@ -359,6 +414,12 @@ the host's clock arrives in.
 Overshoot. Peak Hold and Hold Decay appear on the bargraph, Persistence on the magic eye.
 
 **Needle Red/Green/Blue does nothing.** It has no needle to colour on the magic eye.
+
+**The VFD is dark.** Look at the status lamp. Amber: no device is chosen in **Audio Input**.
+Blinking red: the chosen device isn't there (plug it in and press **Rescan Inputs**). Steady red:
+the device is open but sending silence, which on macOS may also mean Resolume hasn't been given
+microphone access (System Settings > Privacy & Security > Microphone). Green with nothing lit: the
+level is more than 36 dB below Reference Level; lower Reference Level.
 
 ---
 

@@ -115,6 +115,20 @@ doesn't have a window to film, so the footage comes from this repo's offline
 harness (`ndtest --pipe`, driven by a cue sheet) rather than a screen recording,
 and the soundtrack is synthesised: what you hear is what the meters were fed.*
 
+### A fifth, not yet released: a VFD spectrum analyser
+
+![A VFD spectrum display: 31 blue-green columns with peak dots](docs/vfd.png)
+
+**VFD** — a 1980s hi-fi spectrum display. 31 third-octave columns (or 10 octaves
+summed from them) of twelve 3 dB segments, a peak dot that waits **Peak Hold**
+after the bar leaves it, the standard ZnO:Zn blue-green phosphor, four 37.5 µm
+filament wires across the glass, and a multiplexed scan you can only see
+through a camera **Shutter**. It listens to an audio device you pick, through
+the Stoatworks earshot library, because Resolume's 64 bins can't make a
+third-octave display; on the other four Types needle never touches your audio
+hardware, not even to list it. It's in the source, not in a release, and it has
+never been in Resolume.
+
 ## Controls
 
 - **Meter**: Type (VU / PPM / Bargraph / Magic Eye), Count (mono or a stereo
@@ -133,6 +147,9 @@ and the soundtrack is synthesised: what you hear is what the meters were fed.*
   dirtying the glass and dimming the phosphor it puts dry friction in the pivot.
   At Wear 0, which is the default, the movement is bit-identical to a clean one.
 - **Layout**: Size, Position, Rotation, Background, Mix.
+- **VFD** (shown only on the VFD, which also reads Reference Level,
+  Sensitivity, Peak Hold, Hold Decay and the Layout group): Bands (31 Thirds /
+  10 Octaves), Multiplex Rate, Shutter, Audio Input, Rescan Inputs, Status Lamp.
 
 Every ballistic default is the value at which Free agrees with Standard for
 the quantity it's named after: Rise and Overshoot give the VU's standard
@@ -236,6 +253,44 @@ The physics checks (`--ballistics --ppm --steps --eye --prime --rate --friction
 passed there too (`ndtest --pixels`, and the sweep at 160x90). The Windows x64 DLL was compiled with MSVC on GitHub's Windows runner and
 the job passed.
 
+**The VFD (unreleased; measured on this Mac on 2026-11-16, `ndtest`, all on a
+scripted capture backend fed through earshot's `feed()`):**
+
+- **IEC 61260 class 1 bands** (read in IS 6964, its identical adoption): every
+  centre within half a unit of Table A.1's five printed figures, every label
+  Table A.1's; a sine at each midband reads **0.001 dB** at worst in its own
+  band (allowed ±0.3), and at every band edge **3.010 dB** down (allowed 2.0–5.0).
+  A sine's neighbours read at least **1.50 dB** further down than class 1 asks, and the
+  picture lights exactly what those levels imply. The 10 octaves meet the octave
+  mask (worst 0.128 dB in band, neighbours at least 35.9 dB down).
+- **The peak hold is frame-rate independent:** at 24, 30, 60 and 144 fps the dot
+  holds **1.5 s ± one frame** after the bar leaves it and falls at
+  **12.000000 dB/s**, and it doesn't move during an 8 s note.
+- **The picture**: a camera exposure of two whole scans gives the eye's picture
+  to **0** code values; a 1/8000 s shutter rolls down the picture at the rate the
+  readout implies (0.06864 against 0.06889 columns a row); host time 499,000 s
+  draws what 0 s draws; each wire darkens a segment by its own width
+  (0.2769 px against 0.2779); every segment edge sits within **0.002 px** of the
+  spec's millimetres; the phosphor decodes onto the line from D65 to Noritake's
+  (0.24, 0.41). Each of those at 1280×720 and 320×180, on the GPU and on Apple's
+  software renderer.
+- **VFD off doesn't touch CoreAudio**: with the real backend, every control on
+  all four meters builds no audio engine, lists no device and opens none. And the
+  four meters render **byte-identically** to v0.1.2's source in 72 scenes on the
+  GPU and 36 on the software renderer.
+- Every check has a planted bug it catches (`ndtest --negative`), and every
+  one-character shader mutant in `tools/mutate.sh` is caught by the check it
+  targets (and its no-op edit is not).
+- **Cost**, `ndtest --bench`: **0.583 ms a frame at 720p and 0.593 at 1080p**
+  with the VFD on (3.5 % of a 60 fps frame), against 0.015 and 0.013 ms for the
+  meters. It barely moves with the raster, so it's the audio analysis, not the
+  shader: the figure includes earshot's update and the harness feeding it.
+
+What isn't verified for the VFD: it has never been in Resolume or any host with
+a real audio device; earshot has never been compiled for Windows; the macOS
+microphone prompt hasn't been seen; and whether Resolume refreshes the device
+menu after **Rescan Inputs** is unknown.
+
 What isn't verified yet:
 
 - **Never loaded into Resolume on macOS**, and not installed into it there.
@@ -309,9 +364,10 @@ line.
 
 ## Building and testing
 
-The offline harness drives the real plugin class. Thirteen of its fifteen check groups
-don't open a GL context at all, because their claims are about a differential
-equation, and a rasteriser has no opinions about those:
+The offline harness drives the real plugin class. Thirteen of the meters' fifteen
+check groups don't open a GL context at all, because their claims are about a
+differential equation, and a rasteriser has no opinions about those (the VFD's
+bands and hold are measured the same way):
 
     ./build/ndtest --ballistics     # ANSI C16.5, solved and measured
     ./build/ndtest --ppm            # IEC 60268-10 type II
@@ -322,10 +378,16 @@ equation, and a rasteriser has no opinions about those:
     ./build/ndtest --friction       # a worn pivot, and what it does not touch
     ./build/ndtest --pair           # a Stereo Pair agrees after Mono and back
     ./build/ndtest --pixels         # and the one check that reads a rasteriser
+    ./build/ndtest --iec            # the VFD's bands against IEC 61260 class 1
+    ./build/ndtest --hold           # its peak hold at 24, 30, 60 and 144 fps
+    ./build/ndtest --geometry       # its segments where the millimetres say
+    ./build/ndtest --coreaudio      # and VFD off never reaches an audio device
+    ./build/ndtest --negative       # every planted bug is caught
+    tools/mutate.sh                 # every one-character shader mutant is caught
     ./build/ndtest --bench          # 720p through 4K
     ./build/ndtest --out /tmp/f.png --size 1920x1080 --level -18 --set "Type=1"
     python3 tools/sweep.py          # no control is silently dead
-    tools/verify.sh                 # all of it, in about nine seconds
+    tools/verify.sh                 # all of it
 
 ## Diagnostics
 
