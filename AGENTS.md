@@ -844,7 +844,8 @@ scan or the shutter model changes.
 
 `demo/` is the page at https://needle-demo.stoatworks-labs.com, built on the
 shared kit in `stoatworks-backend/resolume-demo/` (vendored into `demo/vendor/`;
-never edit it here). It is two halves, and they are not equally faithful.
+never edit it here). The four meters are two halves, and they are not equally
+faithful; the fifth Type, the VFD, is the plugin itself, compiled (below).
 
 **The shader is the plugin's.** `VERTEX_SHADER`, `FRAGMENT_SHADER_A` and
 `FRAGMENT_SHADER_B` in `demo/plugin.js` are the three raw strings in
@@ -884,9 +885,13 @@ Decisions made rather than asked:
   assumption on the same numbers. A test level in dBFS means what the plugin's
   level law reads: RMS, 1.0 = full scale.
 - **Absent from the panel:** the `Audio` buffer parameter (a host writes it; the
-  test signal stands in) and the About block (a web page has its own links). The
-  other 31 parameters are all present with the constructor's names, groups,
-  types, element lists and defaults, in `Controls.h` order. The colour triples
+  test signal stands in), the VFD's Audio Input and Rescan Inputs (device
+  controls; see below) and the About block (a web page has its own links). The
+  other 35 parameters are all present with the constructor's names, groups,
+  types, element lists and defaults, in `Controls.h` order — and since v0.2.0
+  the page checks that against the compiled constructor at start-up. Size's id
+  on the page is `instrumentSize`: as `size` it read the kit's `?size=WxH` as
+  NaN and opened every link carrying a resolution at Size 0, until 2026-11-18. The colour triples
   keep the plugin's names, so the kit's swatch reads "Face Red" etc. Needle has
   no FF_TYPE_INTEGER controls, so galvo's dropdown workaround was not needed.
 - **No Clip picker and no "Use my own…"** — a source has zero inputs, so both are
@@ -916,6 +921,79 @@ Verified 2026-09-24 headlessly (Chrome + SwiftShader via cdpshot's CDP client):
 no console errors, no `.stage__status.is-error`, the VU reading 0 on the 0 VU
 step, and Type VU → PPM changing the canvas while paused; the bargraph (with its
 hold bar) and the magic eye rendered as a stereo pair on the ramp.
+
+### Type = VFD: the plugin, compiled to WebAssembly (v0.2.0)
+
+`demo/needle-core.{js,wasm}` is `source/Needle.cpp` and everything it calls —
+every `source/*.cpp` but `SourcePlugin.cpp` — with earshot (`EARSHOT_CAPTURE=OFF`:
+`NoCapture.cpp`, no miniaudio, so **no device backend exists in the module**)
+and the FFGL SDK's plugin classes, compiled unmodified by
+`demo/tools/build-wasm.sh` (woofer's recipe; emscripten, `-D__linux__=1` for the
+SDK's platform header, `-O3`, no pthreads, `DYNAMIC_EXECUTION=0`). The built
+files are committed (the deploy has no build step) with
+`demo/wasm/inputs.sha256`, which hashes every input, both outputs, the SDK
+commit and the CMakeLists version. **Anything under `source/` or
+`external/earshot/` changed — a version bump and a regenerated
+`StoatworksAbout.h` included — means rerun `demo/tools/build-wasm.sh`**;
+`check_shaders.py` (verify's "demo shaders") fails until you do.
+
+`demo/wasm/glue.cpp` is the host (construct, read declarations through the
+SDK's getters, SetFloatParameter, SetTime, ProcessOpenGL into the page's
+framebuffer) and, like ndtest, the harness: `ForceSecondsClock()`, and audio
+through earshot's `feed()` on the plugin's own `vfd::Input` (Vfd.inc's Driver
+shape). `nd_prepare` sets `NEEDLE_NO_DEVICES=1`, so the one `vfd::Input::List()`
+the plugin makes on its first VFD frame never reaches earshot.
+`demo/wasm/gl_shim.cpp` owns `glShaderSource` (only the page's checked copies
+compile — `VFD_FRAGMENT_SHADER` in `demo/vfd.js` is `source/VfdShaders.cpp`'s
+raw string, checked like the meters') and ignores `GL_PROGRAM_POINT_SIZE` in
+`glEnable`/`glDisable`/`glIsEnabled`. CSP needs `'wasm-unsafe-eval'`
+(`demo/_headers`; production only — a local server does not apply it).
+
+Decisions:
+
+- **Hybrid, not all-wasm.** The meters stay on the checked JS port; only the
+  VFD runs compiled. Lower risk for the release, `check_shaders.py` unchanged
+  for them. The compiled plugin still advances its own meter engine on VFD
+  frames, as ProcessOpenGL does; the page's meters are drawn by the port.
+  Moving them to the wasm is the natural follow-up and would retire the port.
+- **Audio Input and Rescan Inputs are not on the panel**, said in the banner's
+  disclosure, the inspector note, the VFD note under the picture and the
+  hints. The readout under the picture prints the menu's device count and the
+  plugin's `selectDevice` counter (both 0). No served file may name
+  `getUserMedia`, `enumerateDevices` or `mediaDevices` (`check_shaders.py`).
+- **The VFD's audio** (the "VFD signal" menu, `?vfdsignal=`): the track (the
+  page's default: 120 BPM, kick/snare/hats/bass/chord/arpeggio, 8 s loop),
+  **ndtest's programme** (`Programme(PerBandDb(-18), 9, 48000)`, copied with
+  `kPi`, `AmpFromDb`, `kFeedRate`, `Signal`, `BandHz`, `Fade` and `PerBandDb`
+  verbatim and checked), the 31 base-ten midbands in turn, a 20 s log sweep,
+  periodic pink noise, silence (lamp red after 3 s), and "Nothing fed" — the
+  plugin's own default, None (host FFT): dark, lamp amber. All −18 dB re a
+  full-scale sine, generated in the wasm from the sample index, fed at 48 kHz
+  on both channels up to the page's clock; after a gap only the newest 0.5 s.
+- **Instances.** A new one on the first VFD frame, on Restart and on a change
+  to or from "Nothing fed"; otherwise it carries on across Type changes, as in
+  Resolume (its earshot skips the gap).
+- **Shutter and Multiplex Rate** are the plugin's own camera model, drawn by its
+  shader; the page adds nothing and says so.
+- **No photosensitivity note** on the page at v0.2.0. If the VFD is found to
+  cross 3 flashes a second (its bars, peak dots or, under Shutter, the
+  multiplex), add a short note shown with the VFD — warn, never change a
+  default.
+
+`demo/tools/crosscheck.py` (not in verify: it needs Chrome and a GPU) serves
+`demo/` with `_headers` applied, traps every device API, and checks the page:
+the four meters draw and move, the VFD draws with earshot Running at 48 kHz
+and the lamp green, Bands and Shutter change the picture, every signal runs,
+nothing is logged. With `--ndtest build/ndtest` it compares the VFD's bytes
+with `ndtest --pipe` at 960×540 after the same 800 N samples of the programme.
+2026-11-18, M4 Max on ANGLE Metal against ndtest arm64: **all five cases
+(defaults; 10 Octaves; Shutter 1/1000 s at 300 Hz; Reference −30, Sensitivity
++6, Peak Hold 0; Rotation 30°, Size 0.8, Background 1, lamp off) within one
+code of 255 in at most 102 of 1 555 200 values, alpha identical** (the last
+case byte-identical); the negative control (Rotation +0.001) moves 39 424
+values by up to 255. ndtest's frame N − 1 is compared, its clock 1/60 s behind
+the page's; only the scan phase reads the clock, so the Shutter case uses a
+rate with whole scans per 1/60 s.
 
 ## Shape of the code
 

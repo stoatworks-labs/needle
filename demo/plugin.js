@@ -66,9 +66,11 @@
  * **The Audio buffer parameter and the About block are absent from the panel.**
  * The buffer is written by a host, never by an operator; its stand-in here is
  * the test signal. The About block is a text line and four link buttons so a
- * host has somewhere to put them; a web page has links of its own. Every other
- * parameter — 31 of them — is here, with the constructor's names, groups,
- * types, element lists and defaults, in `Controls.h` order. Needle declares no
+ * host has somewhere to put them; a web page has links of its own. So are the
+ * VFD's Audio Input and Rescan Inputs, which reach audio devices (below). Every
+ * other parameter — 35 of them — is here, with the constructor's names, groups,
+ * types, element lists and defaults, in `Controls.h` order, and `vfd.js` holds
+ * the panel to the compiled constructor at start-up (`checkPanel`). Needle declares no
  * FF_TYPE_INTEGER controls, so nothing needed galvo's dropdown workaround.
  *
  * **The clock is the kit's, already in seconds.** The plugin's `Clock` measures
@@ -87,10 +89,24 @@
  * IEC claims are checked by `ndtest --ballistics`, `--ppm`, `--steps`, `--eye`,
  * `--prime`, `--rate` and `--friction` in the repository, with no GL context at
  * all, and that harness is the reason to believe the model.
+ *
+ * ---------------------------------------------------------------------------
+ * The fifth Type, the VFD, is not this port
+ * ---------------------------------------------------------------------------
+ *
+ * Type = VFD runs the plugin itself: `needle-core.wasm`, the plugin's own C++
+ * with earshot under it, compiled unmodified to WebAssembly (`vfd.js`,
+ * `demo/tools/build-wasm.sh`). Everything above this line — the shaders, the
+ * port, the 64-bin test spectrum — is the four meters' and is unchanged by
+ * it. On a VFD frame the meter port below still advances, as the plugin's
+ * ProcessOpenGL advances its meter engine on every frame whatever Type says,
+ * and the picture comes from the WebAssembly instead. The VFD's audio is its
+ * own: generated test signals fed to earshot's feed(), never a microphone.
  */
 
 import { mountDemo } from './vendor/demo.js';
 import { Program } from './vendor/gl.js';
+import { loadVfd, VFD_SIGNALS, FEED_RATE } from './vfd.js';
 
 //---------------------------------------------------------------------------
 // Shaders — verbatim from source/Shaders.cpp. Do not edit here.
@@ -610,6 +626,10 @@ const PPM_RISE_TAU = -kPpmBurstSeconds / Math.log(1.0 - Math.pow(10.0, -kPpmBurs
 
 const MeterType = { Vu: 0, Ppm: 1, Bargraph: 2, Eye: 3 };
 const kMeterTypeCount = 4;
+// Controls.h: Type's five elements, the fifth the VFD, which the meter engine
+// never sees (NeedlePlugin::IsVfd reads Type over all five).
+const kTypeCount = 5;
+const kTypeVfd = 4;
 
 const copysign = (magnitude, sign) => ((sign < 0 || Object.is(sign, -0)) ? -magnitude : magnitude);
 
@@ -957,6 +977,8 @@ const kPeakHoldDefault = 0.3872983;
 const kHoldDecayDefault = 0.25;
 const kPersistenceDefault = 0.12;
 const kSizeDefault = 0.55;
+// The VFD's (Controls.h): 100 Hz, lg 2 to a float's precision.
+const kMultiplexDefault = 0.30103;
 
 const kBinLawCount = 2;
 const kScaleStyleCount = 4;
@@ -1058,7 +1080,7 @@ function buildFrame(p, engine, width, height) {
   };
 
   const minDim = Math.min(width, height);
-  const S = f32(SizeFraction(p.get('size')) * minDim * 0.5);
+  const S = f32(SizeFraction(p.get('instrumentSize')) * minDim * 0.5);
   const rot = RotationRadians(p.get('rotation'));
 
   let aspect = 1.55;
@@ -1559,9 +1581,16 @@ function createRenderer(gl) {
     void p;
   }
 
+  // The VFD's host: the plugin compiled to WebAssembly, on this same context.
+  // Built whether or not the VFD is ever chosen; the plugin itself is
+  // constructed on the first VFD frame.
+  const vfdHost = vfd.error ? null : vfd.createRenderer(gl);
+  let vfdFailed = vfd.error ?? null;
+
   return {
     engine,
     bins,
+    vfd: vfdHost,
     render({ params, width, height, time, variant }) {
       const signal = SIGNALS.find((s) => s.id === variant) ?? SIGNALS[0];
 
@@ -1581,6 +1610,21 @@ function createRenderer(gl) {
       const power = toOption(params.get('binLaw'), kBinLawCount) === 1;
       const level = levelFromSpectrum(bins, power);
       engine.frame(time, [level, level], kMaxChannels);
+
+      // NeedlePlugin::IsVfd. The meter engine above has advanced either way,
+      // as the plugin's does; the VFD draws instead of the meters.
+      if (toOption(params.get('type'), kTypeCount) === kTypeVfd) {
+        if (!vfdFailed) {
+          try {
+            vfdHost.render({ params, width, height, time, signal: vfdSignal.id });
+          } catch (error) {
+            vfdFailed = error.message;
+            console.error(error);
+          }
+        }
+        vfdReadout(vfdFailed);
+        return;
+      }
 
       draw(buildFrame(params, engine, width, height));
       readout(level, engine);
@@ -1603,29 +1647,49 @@ const std = (id, name, def, group, extra = {}) =>
 const bool = (id, name, def, group, hint) => ({ id, name, type: 'boolean', default: def, group, hint });
 const colour = (id, name, def, group, hint) => ({ id, name, type: 'colour', default: def, group, hint });
 
+//---------------------------------------------------------------------------
+// The VFD: the plugin compiled (vfd.js). Loaded before the page mounts; a
+// browser that will not run it still gets the four meters.
+//---------------------------------------------------------------------------
+
+const vfd = await loadVfd({ vertex: VERTEX_SHADER, fragment: FRAGMENT_SHADER });
+if (vfd.error) console.error(`Needle demo: the VFD is unavailable: ${vfd.error}`);
+
+const pageQuery = new URLSearchParams(window.location.search);
+/** Which test signal the VFD is fed: `?vfdsignal=`, or the track. */
+const vfdSignal = {
+  id: VFD_SIGNALS.some((s) => s.id === pageQuery.get('vfdsignal')) ? pageQuery.get('vfdsignal') : VFD_SIGNALS[0].id,
+};
+
+/** A VFD control's read-out: Controls.h's conversion, compiled in. */
+function vfdUnits(name, v, format) {
+  if (vfd.error) return Number(v).toFixed(3);
+  return format(vfd.convert(name, v));
+}
+
 const NOT_AUDIO =
   'There is no audio on this page: the level comes from the test signal chosen under the picture, shaped into a spectrum by this page — not by Resolume’s FFT, whose calibration is unknown.';
 
 const PARAMS = [
   // -- Meter --------------------------------------------------------------
-  opt('type', 'Type', ['VU', 'PPM', 'Bargraph', 'Magic Eye'], 0, 'Meter',
-    'Four instruments on one engine. VU: ANSI C16.5’s movement, on a scale linear in voltage. PPM: IEC 60268-10 type II, the BBC meter, linear in dB. Bargraph: the LM3915’s ten 3 dB steps off the PPM’s detector. Magic Eye: a 6U5’s shadow, which closes at the reference and overlaps past it.'),
+  opt('type', 'Type', ['VU', 'PPM', 'Bargraph', 'Magic Eye', 'VFD'], 0, 'Meter',
+    'Four instruments on one engine, and a fifth on its own. VU: ANSI C16.5’s movement, on a scale linear in voltage. PPM: IEC 60268-10 type II, the BBC meter, linear in dB. Bargraph: the LM3915’s ten 3 dB steps off the PPM’s detector. Magic Eye: a 6U5’s shadow, which closes at the reference and overlaps past it. VFD: a 1980s hi-fi fluorescent spectrum display on earshot’s third-octave bank — on this page the plugin’s own C++ compiled to WebAssembly, fed a generated test signal, where the four meters are a JavaScript port.'),
   opt('count', 'Count', ['Mono', 'Stereo Pair'], 0, 'Meter',
-    'How many meters are DRAWN, never how many run: both are integrated every frame. FFGL has one spectrum to give, so a pair shows the same programme twice.'),
+    'How many meters are DRAWN, never how many run: both are integrated every frame. FFGL has one spectrum to give, so a pair shows the same programme twice. Not read on the VFD (hidden there in Resolume).'),
   std('reference', 'Reference Level', kReferenceDefault, 'Meter', {
     display: (v) => `${ReferenceDbfs(v).toFixed(1)} dBFS`,
-    hint: `The dBFS the meter calls zero, −40 to 0. The default is −18 dBFS, EBU R68’s alignment level, and the test signals here are built around it. ${NOT_AUDIO}`,
+    hint: `The dBFS the meter calls zero, −40 to 0. The default is −18 dBFS, EBU R68’s alignment level, and the test signals here are built around it. On the VFD the top segment lights 3 dB under it and the bottom one 36 dB under, in dB re a full-scale sine. ${NOT_AUDIO}`,
   }),
   std('sensitivity', 'Sensitivity', kSensitivityDefault, 'Meter', {
     display: (v) => signedDb(TrimDb(v)),
-    hint: `Input trim, ±12 dB, because the absolute calibration of a host’s spectrum is not known. ${NOT_AUDIO}`,
+    hint: `Input trim, ±12 dB, because the absolute calibration of a host’s spectrum is not known. On the VFD it trims every column. ${NOT_AUDIO}`,
   }),
   opt('binLaw', 'Bin Law', ['Magnitude', 'Power'], 0, 'Meter',
-    'Whether a host bin is a magnitude or a power — genuinely unknown for Resolume, so it is a switch. This page writes its test spectrum as MAGNITUDES, so Magnitude reads the signal at the level it was generated at and Power shows what the other assumption does to the same numbers.'),
+    'Whether a host bin is a magnitude or a power — genuinely unknown for Resolume, so it is a switch. This page writes its test spectrum as MAGNITUDES, so Magnitude reads the signal at the level it was generated at and Power shows what the other assumption does to the same numbers. Not read on the VFD, which reads earshot’s thirds, never the 64 bins.'),
 
   // -- Ballistics ---------------------------------------------------------
   bool('standard', 'Standard', 1, 'Ballistics',
-    'On: every ballistic constant comes from the standards and Rise, Fall and Overshoot are not read at all — in Resolume they are hidden. Off: Free, deliberately unphysical — a rise that differs from a fall is not a mass on a spring.'),
+    'On: every ballistic constant comes from the standards and Rise, Fall and Overshoot are not read at all — in Resolume they are hidden. Off: Free, deliberately unphysical — a rise that differs from a fall is not a mass on a spring. None of the four is read on the VFD, whose bars follow earshot’s Fast weighting.'),
   std('rise', 'Rise', kRiseDefault, 'Ballistics', {
     display: (v) => dur(RiseSeconds(v)),
     hint: 'Free only. Time to 99 % of a rising step, 20 ms to 2 s. The default, 300 ms, is ANSI C16.5’s.',
@@ -1640,15 +1704,15 @@ const PARAMS = [
   }),
   std('peakHold', 'Peak Hold', kPeakHoldDefault, 'Ballistics', {
     display: (v) => dur(PeakHoldSeconds(v)),
-    hint: 'The bargraph’s hold bar, 0 to 10 s; zero turns it off. Nothing specifies it, so it stays live on Standard.',
+    hint: 'The bargraph’s hold bar and the VFD’s peak dots, 0 to 10 s; zero turns them off. On the VFD the dot waits this long after its bar leaves its segment, in earshot’s audio time. Nothing specifies it, so it stays live on Standard.',
   }),
   std('holdDecay', 'Hold Decay', kHoldDecayDefault, 'Ballistics', {
     display: (v) => `${HoldDecayDbPerSecond(v).toFixed(1)} dB/s`,
-    hint: 'How fast the hold bar falls afterwards, 0 to 48 dB/s. Not specified by anybody.',
+    hint: 'How fast the hold bar, or the VFD’s dot, falls afterwards, 0 to 48 dB/s. Not specified by anybody.',
   }),
 
   // -- Look ---------------------------------------------------------------
-  colour('faceR', 'Face Red', 0.93, 'Look', 'The dial’s face, the bargraph’s panel, the magic eye’s bezel.'),
+  colour('faceR', 'Face Red', 0.93, 'Look', 'The dial’s face, the bargraph’s panel, the magic eye’s bezel. No control in Look is read on the VFD (hidden there in Resolume): its colour is its phosphor.'),
   colour('faceG', 'Face Green', 0.90, 'Look'),
   colour('faceB', 'Face Blue', 0.79, 'Look'),
   colour('needleR', 'Needle Red', 0.10, 'Look', 'The pointer and the scale ink. The eye’s phosphor is a fixed tube green, so this does nothing on the Magic Eye.'),
@@ -1666,9 +1730,12 @@ const PARAMS = [
   }),
 
   // -- Layout -------------------------------------------------------------
-  std('size', 'Size', kSizeDefault, 'Layout', {
+  // Not `size`: the kit reads ?size=WxH as the raster, and a parameter with
+  // that id read the same query value as a number, NaN, so every link with a
+  // resolution in it opened at Size 0 (15 %) until 2026-11-18.
+  std('instrumentSize', 'Size', kSizeDefault, 'Layout', {
     display: (v) => `${pct(SizeFraction(v))} of height`,
-    hint: 'The instrument’s height as a fraction of the raster’s shorter side, 15 % to 100 %.',
+    hint: 'The instrument’s height as a fraction of the raster’s shorter side, 15 % to 100 %. The VFD’s glass, 100 × 30 mm, is half that tall.',
   }),
   std('posX', 'Position X', 0.5, 'Layout', { display: (v) => Offset(v).toFixed(2) }),
   std('posY', 'Position Y', 0.5, 'Layout', { display: (v) => Offset(v).toFixed(2) }),
@@ -1681,12 +1748,72 @@ const PARAMS = [
   colour('backG', 'Back Green', 0.04, 'Layout'),
   colour('backB', 'Back Blue', 0.05, 'Layout'),
   std('mix', 'Mix', 1.0, 'Layout', 'Overall opacity of the output.'),
+
+  // -- VFD (after About in the plugin: ids are never renumbered) ------------
+  // Audio Input and Rescan Inputs sit between Shutter and Status Lamp in the
+  // plugin and are left off this panel: both reach real audio devices.
+  opt('bands', 'Bands', ['31 Thirds', '10 Octaves'], 0, 'VFD',
+    'VFD only. 31 Thirds: the IEC 61260 base-ten third-octave bands, 20 Hz to 20 kHz — earshot’s bank, Butterworth band-passes with Fast (125 ms) weighting. 10 Octaves: 31.5 Hz to 16 kHz, each the power sum of its three thirds.'),
+  std('multiplex', 'Multiplex Rate', kMultiplexDefault, 'VFD', {
+    display: (v) => vfdUnits('Multiplex Rate', v, (hz) => `${hz.toFixed(hz < 100 ? 1 : 0)} Hz`),
+    hint: 'VFD only. The grid scan, 50 to 500 Hz: one grid per column in turn, with 20 µs of blanking. To the eye it changes nothing, by design — the eye sees the time average. Only a camera shows it: raise Shutter.',
+  }),
+  std('shutter', 'Shutter', 0.0, 'VFD', {
+    display: (v) => vfdUnits('Shutter', v, (s) => (s <= 0 ? 'eye' : `1/${Math.round(1 / s)} s`)),
+    hint: 'VFD only. 0 is the eye. Above it, a rolling-shutter camera with a 16 ms readout, 1/24 s to 1/8000 s: each row of the picture catches its own slice of the scan, so a short exposure shows dark bands across the bars that move with Multiplex Rate. Those bands are the plugin’s own camera model, computed in its shader, not added by this page.',
+  }),
+  opt('statusLamp', 'Status Lamp', ['Off', 'On'], 1, 'VFD',
+    'VFD only. A lamp on the glass. Green: a device delivers — here earshot’s feed(), the path the test signal takes. Steady red: the input is open and bit-exactly silent (the Silence signal, after 3 s). Amber: no device, and the display dark. Blinking red, a device missing or refused, cannot happen on this page, which never chooses one.'),
 ];
 
 let readoutNode = null;
 let readoutAt = 0;
+let noteNode = null;
+let renderer = null;
+/** Which half drew the last frame: 'meters' or 'vfd', for the lines under the picture. */
+let showing = null;
+
+const METER_NOTE =
+  'Test signal, not audio. The meters are driven by the signal chosen above, which this page turns into a 64-bin spectrum itself. That is not Resolume’s FFT: the plugin’s own level law runs on it, but the host’s calibration is unknown and is not reproduced.';
+const VFD_NOTE =
+  'Test signal, not audio, and no microphone. The VFD is the plugin’s own C++ compiled to WebAssembly; the signal chosen above is generated inside it and handed to earshot’s feed(), the path a capture device’s samples take. This page never lists or opens an audio device, so Audio Input and Rescan Inputs are not on the panel.';
+
+function switchHalf(half) {
+  if (showing === half) return;
+  showing = half;
+  readoutAt = 0;
+  if (noteNode) noteNode.textContent = half === 'vfd' ? VFD_NOTE : METER_NOTE;
+  // style.display, not `hidden`: the kit's .transport__field sets a display of
+  // its own, which beats the hidden attribute's.
+  for (const field of document.querySelectorAll('[data-half]')) field.style.display = field.dataset.half === half ? '' : 'none';
+}
+
+const hz = (f) => (f >= 1000 ? `${(f / 1000).toFixed(f >= 10000 ? 0 : 1)} kHz` : `${f.toFixed(f < 100 ? 1 : 0)} Hz`);
+
+function vfdReadout(failed) {
+  switchHalf('vfd');
+  if (!readoutNode) return;
+  const now = performance.now();
+  if (now - readoutAt < 150) return;
+  readoutAt = now;
+  if (failed) {
+    readoutNode.textContent = `The VFD could not run here: ${failed}. The four meters do not depend on it.`;
+    return;
+  }
+  const s = renderer?.vfd?.stats();
+  if (!s) return;
+  let loudest = null;
+  for (const c of s.columns) if (c.present && (!loudest || c.level > loudest.level)) loudest = c;
+  const top = loudest && loudest.level > -200
+    ? `loudest column ${hz(loudest.hz)} at ${loudest.level.toFixed(1)} dB re full-scale sine, ${loudest.lit} of 12 lit`
+    : 'every column dark';
+  readoutNode.textContent =
+    `earshot, fed ${(s.fed / FEED_RATE).toFixed(1)} s at ${s.rate ? `${s.rate / 1000} kHz` : '—'}: ${s.state}, ${s.thirds} thirds · ${top} · lamp ${s.lamp} · devices listed ${s.devices}, devices selected ${s.calls.selects}`;
+}
+
 
 function readout(level, engine) {
+  switchHalf('meters');
   if (!readoutNode) return;
   const now = performance.now();
   if (now - readoutAt < 150) return;
@@ -1704,14 +1831,14 @@ const mounted = mountDemo({
   kind: 'source',
   pluginId: 'ND01',
   tagline:
-    'Four audio meters — a VU, a BBC PPM, an LM3915 LED bargraph and a magic eye — each moving the way its standard says it must. The VU’s damping and natural frequency are solved from ANSI C16.5’s two sentences, the PPM’s time constants from IEC 60268-10 type II, and the engine integrates them at 4800 Hz whatever the frame rate.',
+    'Four audio meters — a VU, a BBC PPM, an LM3915 LED bargraph and a magic eye — each moving the way its standard says it must, and a fifth Type, a 1980s hi-fi VFD spectrum display on a third-octave filter bank. The VU’s damping and natural frequency are solved from ANSI C16.5’s two sentences, the PPM’s time constants from IEC 60268-10 type II, and the engine integrates them at 4800 Hz whatever the frame rate.',
   repo: 'https://github.com/stoatworks-labs/needle',
   page: 'https://stoatworks-labs.com/software/needle/',
   video: 'https://www.youtube.com/watch?v=37tMfGAREYU',
 
   // Needle is a SOURCE. The stock clause says "on generated clips".
   blurb:
-    'It is Needle’s own GLSL, ported from the repository to WebGL2, driven by a JavaScript port of the plugin’s meter engine and level law — same parameters, same maths, no install. There is no audio here: the meters are driven by a generated test signal (tone steps, bursts, pink noise), which this page shapes into a 64-bin spectrum itself. That is not Resolume’s FFT, whose window, normalisation and bin law nobody has measured.',
+    'The four meters are Needle’s own GLSL, ported from the repository to WebGL2, driven by a JavaScript port of the plugin’s meter engine and level law — same parameters, same maths, no install. Type = VFD is the plugin’s own C++, earshot’s filter bank under it, compiled unmodified to WebAssembly and drawing with its own GLSL. There is no audio here and no microphone: the meters are driven by a generated test signal this page shapes into a 64-bin spectrum itself (not Resolume’s FFT, whose window, normalisation and bin law nobody has measured), and the VFD by generated test signals fed to earshot as a capture device’s samples would be.',
 
   // Background defaults to 0, so the output is the meter alone with real alpha;
   // in Resolume what shows through would be the layers below.
@@ -1728,17 +1855,34 @@ const mounted = mountDemo({
   params: PARAMS,
 
   differences: [
-    'There is no audio. The plugin reads one thing from its host — Resolume’s 64-bin FFT buffer, once per frame — and a browser has no Resolume. This page does not ask for a microphone. Instead a generated test signal (a 0 VU step, a −20 dB step, a steady alignment tone, 5 ms bursts, a ladder of burst lengths, pink noise, a pink-noise ramp, silence) is integrated over each frame’s interval and written into 64 bins by this page, and the plugin’s own level law runs on those bins.',
+    // -- the four meters -------------------------------------------------------
+    'There is no audio. For the four meters the plugin reads one thing from its host — Resolume’s 64-bin FFT buffer, once per frame — and a browser has no Resolume. This page does not ask for a microphone. Instead a generated test signal (a 0 VU step, a −20 dB step, a steady alignment tone, 5 ms bursts, a ladder of burst lengths, pink noise, a pink-noise ramp, silence) is integrated over each frame’s interval and written into 64 bins by this page, and the plugin’s own level law runs on those bins.',
     'It is not the host’s FFT. Resolume’s window, normalisation, headroom, bin layout and whether a bin is a magnitude or a power are all unknown — which is why the plugin has Bin Law, Reference Level and Sensitivity. The page writes magnitudes (a tone into one bin, pink noise as 1/f with a per-bin exponential scatter), so Bin Law on Magnitude reads each test level exactly and Power shows the other assumption. A test level in dBFS means what the plugin’s level law reads: RMS, 1.0 as full scale.',
-    'The Audio buffer parameter and the About block are absent from the panel. The buffer is written by a host, not an operator — the test signal stands in for it — and the About block’s text line and four link buttons exist so a host has somewhere to put links a web page already has. The other 31 parameters are all here.',
+    'For the four meters the whole CPU half is a JavaScript port, and nothing checks it but a reader: the solved constants (ζ from the overshoot in closed form, ωn by bisection on the exact step response, the PPM’s two time constants), the RK4 movement with dry friction, the quasi-peak follower, the hold bar, the magic eye’s warm-up and persistence, the 4800 Hz engine with frame-one priming and the 0.25 s stall clamp, Resolve for Standard and Free, the scale maps, the LM3915 law, the Controls.h conversions, BuildFrame’s geometry and the 5×7 font. The shaders are the plugin’s, unedited; demo/tools/check_shaders.py fails the repository’s verify script if a character drifts.',
+    'For the four meters the clock is the browser’s frame clock in seconds. The plugin’s Clock, which works out what unit a host’s SetTime is in, is not ported, because there is no unit to discover here. Restart sends the clock backwards, which the engine treats as a loop point and advances nothing — the meters carry on from where they were, as the plugin’s would.',
+
+    // -- the VFD -----------------------------------------------------------------
+    'Type = VFD runs the plugin rather than a port of it. needle-core.wasm is source/Needle.cpp — the plugin class: its constructor, its parameter cache, its frame path and its VFD branch — and everything it calls, among them Vfd.cpp (vfd::Input, the only code that calls earshot, and vfd::Display: the columns, the segments and the peak dots), VfdRender.cpp and VfdShaders.cpp (its program and its GLSL), with earshot’s snapshot (8124191, unpatched) and the FFGL SDK’s CFFGLPlugin, parameter bookkeeping and FFGLShader, all compiled unmodified by emscripten (demo/tools/build-wasm.sh). Only the registration (SourcePlugin.cpp) is left out; the page constructs the plugin itself, as its harness does. The compiled plugin also advances its own meter engine every frame, as in Resolume, but the four meters on this page are drawn by the JavaScript port above, not by the WebAssembly.',
+    'No audio device, and no microphone, for the VFD either: the page never asks for one, never lists one and makes no sound. earshot is compiled here with no capture backend at all (EARSHOT_CAPTURE=OFF: its NoCapture.cpp; miniaudio is not compiled), and the plugin is told not to list or open a device (NEEDLE_NO_DEVICES=1, its own verification switch). So two of the VFD’s six controls are not on this panel: Audio Input (the device menu: None (host FFT), System default, or a device by name) and Rescan Inputs. The live-device path — the device menu filling on the first VFD frame, earshot’s worker thread, Missing and Failed, the blinking red lamp — is not in the browser. The line under the picture counts the devices listed and selected: none.',
+    'The VFD’s audio is generated test signals, handed over as the plugin’s harness hands its own: through earshot’s feed(), the path a device’s samples take inside earshot, so the status lamp is green and the columns are earshot’s third-octave bank on the waveform itself, sample by sample. They are fed at 48 kHz, the same sample on both channels, up to the page’s clock each frame; after a gap (a background tab, or the meters shown for a while) only the newest half second is fed, as earshot itself would skip to it. The harness’s programme is ndtest’s own signal, copied into the glue character for character and held to tools/ndtest by the repository’s verify script; the track, the tones, the sweep and the pink noise are this page’s, generated in the WebAssembly. Levels are in dB relative to a full-scale sine, earshot’s reference. Nothing is played aloud.',
+    'The page’s default VFD signal is the track, as if a device were delivering it. The plugin’s default Audio Input, “None (host FFT)”, leaves the VFD dark with an amber lamp, because earshot’s thirds come only from samples; “Nothing fed” in the VFD signal menu shows exactly that. Changing to or from it, Restart and the first VFD frame each start a new instance from that moment; otherwise the instance carries on when Type leaves the VFD and comes back, as in Resolume.',
+    'The VFD’s clock is told rather than voted. The compiled plugin has its Clock, which votes against the wall clock on whether a host’s SetTime is in seconds or milliseconds; the page calls ForceSecondsClock() on each instance, the call ndtest makes, and hands it the page’s seconds (frame deltas, capped at a tenth of a second a frame). Paused, a moved control redraws the frame with nothing fed. Step advances the clock 1/60 s, which feeds 800 samples.',
+    'The VFD’s GLSL is the plugin’s: VFD_FRAGMENT_SHADER in demo/vfd.js is spliced from source/VfdShaders.cpp, and the repository’s verify script fails if a character differs. The compiled plugin hands its shaders to glShaderSource itself, and the page compiles only text that equals one of its checked copies, refusing anything else. The kit’s port() then changes the version line and adds the ES precision defaults. GL is emscripten’s WebGL2 library on this page’s context, not a GL 4.1 driver, and three more entry points are the page’s (demo/wasm/gl_shim.cpp): glEnable, glDisable and glIsEnabled, which ignore GL_PROGRAM_POINT_SIZE, desktop state that WebGL2 does not have.',
+    'Multiplex Rate and Shutter are the plugin’s. The scan is computed in its own shader: at Shutter 0 (the eye) it shows the time average, and nothing of the scan can be seen, by design; above 0 the shader models a rolling-shutter camera with a fixed 16 ms readout, so each row of the picture catches its own slice of the scan and dark bands cross the bars. Those bands are the plugin’s model of a camera, not this page’s effect and not a measurement of any camera. The readout spans the whole raster, as a camera’s does, so how many bands cross the glass depends on Size and Multiplex Rate, not on the Composition size.',
+    'WebAssembly is not the Mac’s arm64. It has no fused multiply-add, and its sin, cos, exp, log10 and pow are musl’s, not Apple’s, so earshot’s filters and the test signals can differ from the plugin built for a Mac in the last digits. What reaches the GPU is the plugin’s own picture of the display, as float, rasterised by this browser’s GPU. demo/tools/crosscheck.py compares this page’s pictures with ndtest’s on a Mac; demo/README.md has the numbers.',
+
+    // -- both ------------------------------------------------------------------
+    'Three of the plugin’s controls and its About block are absent from the panel: the Audio buffer, which a host writes and no operator sets (the meters’ test signal stands in for it), and the VFD’s Audio Input and Rescan Inputs (above). The About block’s text line and four link buttons exist so a host has somewhere to put links a web page already has. The other 35 parameters are all here, in the plugin’s order. At start-up the page reads the compiled plugin’s own declarations and logs an error to the console for any name, group, type, element list or default on this panel that differs from them.',
+    'Resolume shows only the controls the current Type reads (the plugin’s ApplyVisibility): on the VFD it hides Count, Bin Law, the ballistics but Peak Hold and Hold Decay, and every Look control; on a meter it hides the VFD group. The kit’s panel cannot hide a control, so all 35 are always here, and each hint says which Types read it.',
     'There is no clip and no "use my own file". Needle is a source with zero inputs; the kit offers both controls to every demo and this page removes them rather than leaving them present and inert.',
-    'The whole CPU half is a JavaScript port, and nothing checks it but a reader: the solved constants (ζ from the overshoot in closed form, ωn by bisection on the exact step response, the PPM’s two time constants), the RK4 movement with dry friction, the quasi-peak follower, the hold bar, the magic eye’s warm-up and persistence, the 4800 Hz engine with frame-one priming and the 0.25 s stall clamp, Resolve for Standard and Free, the scale maps, the LM3915 law, the Controls.h conversions, BuildFrame’s geometry and the 5×7 font. The shaders are the plugin’s, unedited; demo/tools/check_shaders.py fails the repository’s verify script if a character drifts.',
-    'The clock is the browser’s frame clock in seconds. The plugin’s Clock, which works out what unit a host’s SetTime is in, is not ported, because there is no unit to discover here. Restart sends the clock backwards, which the engine treats as a loop point and advances nothing — the meters carry on from where they were, as the plugin’s would.',
-    'Nothing here is measured. The 300 ms to 99 %, the 1.25 % overshoot, the 20 dB in 2.8 s, the 3 dB ladder, the eye shutting at the overload, frame-one priming and frame-rate independence are all checked by ndtest in the repository, with no GL context at all. That harness, not this page, is the reason to believe the ballistics.',
-    'The plugin has never been loaded into Resolume on macOS and no real audio has reached it in a host. On Windows it passed the fleet’s Arena gate in Arena 7.27.1 on llvmpipe, with the audio-driven controls skipped for want of a sound device. This page is a browser and is evidence about neither.',
+    'Nothing here is measured. The 300 ms to 99 %, the 1.25 % overshoot, the 20 dB in 2.8 s, the 3 dB ladder, the eye shutting at the overload, frame-one priming and frame-rate independence are all checked by ndtest in the repository, with no GL context at all, and the VFD’s bands, segments, dots, lamp and scan by its VFD checks on the same compiled C++. That harness, not this page, is the reason to believe the instruments.',
+    'The plugin has never been loaded into Resolume on macOS and no real audio has reached it in a host. On Windows it passed the fleet’s Arena gate in Arena 7.27.1 on llvmpipe, with the audio-driven controls skipped for want of a sound device. This page is a browser and is evidence about neither, nor about what a live audio device would deliver to the VFD.',
   ],
 
-  createRenderer,
+  createRenderer: (gl) => {
+    renderer = createRenderer(gl);
+    return renderer;
+  },
 });
 
 //---------------------------------------------------------------------------
@@ -1753,11 +1897,94 @@ document.querySelector('.transport__file')?.remove();
 
 const transportBar = document.querySelector('.transport');
 if (transportBar && mounted) {
-  const note = document.createElement('p');
-  note.className = 'stage__status';
-  note.textContent =
-    'Test signal, not audio. The meters are driven by the signal chosen above, which this page turns into a 64-bin spectrum itself. That is not Resolume’s FFT: the plugin’s own level law runs on it, but the host’s calibration is unknown and is not reproduced.';
+  noteNode = document.createElement('p');
+  noteNode.className = 'stage__status';
+  noteNode.textContent = METER_NOTE;
   readoutNode = document.createElement('p');
   readoutNode.className = 'stage__status stage__readout';
-  transportBar.after(note, readoutNode);
+  transportBar.after(noteNode, readoutNode);
+
+  // The kit's "Test signal" is the meters'. The VFD has its own, beside it:
+  // each shown only while its half is drawn.
+  const meterField = [...transportBar.querySelectorAll('.transport__field')]
+    .find((field) => field.querySelector('.transport__label')?.textContent === 'Test signal');
+  if (meterField) meterField.dataset.half = 'meters';
+
+  // Narrow screens: a field may shrink, and its select with it. The kit's
+  // own field did not, and its longest signal name pushed a phone-width page
+  // 86 px sideways before the VFD existed.
+  const shrink = (field) => {
+    if (!field) return;
+    field.style.maxWidth = '100%';
+    field.style.minWidth = '0';
+    const control = field.querySelector('select');
+    if (control) {
+      control.style.maxWidth = '100%';
+      control.style.minWidth = '0';
+    }
+  };
+  shrink(meterField);
+
+  const label = document.createElement('label');
+  label.className = 'transport__field';
+  label.dataset.half = 'vfd';
+  label.style.display = 'none';
+  label.title = 'What is fed to earshot for the VFD: generated in the WebAssembly, never a microphone.';
+  const span = document.createElement('span');
+  span.className = 'transport__label';
+  span.textContent = 'VFD signal';
+  const select = document.createElement('select');
+  select.className = 'transport__select';
+  select.id = 'vfd-signal';
+  for (const option of VFD_SIGNALS) {
+    const node = new Option(option.name, option.id);
+    node.title = option.hint;
+    select.append(node);
+  }
+  select.value = vfdSignal.id;
+  select.disabled = Boolean(vfd.error);
+  select.addEventListener('change', () => {
+    vfdSignal.id = select.value;
+    mounted.redraw();
+  });
+  label.append(span, select);
+  shrink(label);
+  (meterField ?? transportBar.lastElementChild).after(label);
+  // The first frame was drawn before these fields existed.
+  const drawn = showing;
+  showing = null;
+  if (drawn) switchHalf(drawn);
 }
+
+if (mounted) {
+  const params = mounted.params;
+
+  // Copy link carries the VFD's signal.
+  const toQuery = params.toQuery.bind(params);
+  params.toQuery = () => {
+    const q = toQuery();
+    if (vfdSignal.id !== VFD_SIGNALS[0].id) q.set('vfdsignal', vfdSignal.id);
+    return q;
+  };
+
+  // The kit's note says every declared parameter is here; three are not.
+  const note = document.querySelector('.inspector__note');
+  if (note) {
+    note.textContent += ' Left out here: the Audio buffer (Resolume’s FFT, which a host writes; the test signal under the picture stands in for it), the VFD’s Audio Input and Rescan Inputs (this page never lists or opens an audio device) and the About block.';
+  }
+
+  // The panel above is written by hand; the plugin compiled below is the
+  // authority on it.
+  if (!vfd.error) {
+    for (const problem of vfd.checkPanel(PARAMS)) console.error(`Needle demo: the panel differs from the compiled plugin: ${problem}`);
+  }
+}
+
+// For demo/tools/crosscheck.py and anything else checking the page from outside.
+window.needleDemo = {
+  mounted,
+  PARAMS,
+  get renderer() { return renderer; },
+  vfd,
+  vfdSignal,
+};

@@ -172,6 +172,14 @@ mappings or a tolerance in the harness.
   Change the C++ and the page silently disagrees; only a reader checks it.
 - No audio: a generated test signal (the "Test signal" dropdown) is written into
   64 bins by the page. Not Resolume's FFT.
+- **Type = VFD is the plugin compiled to WebAssembly** (`demo/needle-core.{js,wasm}`,
+  built by `demo/tools/build-wasm.sh`, committed). **Changed anything under `source/` or
+  `external/earshot/` — version bump and regenerated `StoatworksAbout.h` included? Rerun
+  `demo/tools/build-wasm.sh`**; `check_shaders.py` checks `demo/wasm/inputs.sha256` and fails
+  until you do. Its audio is generated test signals through earshot's `feed()`; no device
+  is ever listed or opened (`NEEDLE_NO_DEVICES=1`, no capture backend), and Audio Input and
+  Rescan Inputs are not on the panel. `demo/tools/crosscheck.py --ndtest build/ndtest`
+  checks the page in Chrome and the VFD's bytes against ndtest.
 - `demo/vendor/` is the shared kit — never edit it; fix it in
   `stoatworks-backend/resolume-demo/kit/` and re-run its `sync.sh needle`.
 

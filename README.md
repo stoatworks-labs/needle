@@ -396,15 +396,24 @@ What isn't verified yet:
 
 ## Browser demo
 
-**<https://needle-demo.stoatworks-labs.com>** runs the plugin's own shader, copied
-unedited into WebGL2, over a JavaScript port of its meter engine, level law,
-parameter conversions and layout. **There's no audio in the page.** The meters
-are driven by a generated test signal (a 0 VU step, a −20 dB step, 5 ms bursts, a
-ladder of burst lengths, pink noise), which the page itself shapes into a
-64-bin spectrum. That isn't Resolume's FFT (the host's calibration is unknown
-and isn't reproduced), and the port's only check is someone reading it. The
-shader copy is checked: `demo/tools/check_shaders.py`, run by `tools/verify.sh`.
-See `demo/README.md`.
+**<https://needle-demo.stoatworks-labs.com>** runs the four meters as the plugin's
+own shader, copied unedited into WebGL2, over a JavaScript port of its meter
+engine, level law, parameter conversions and layout, and the **VFD** as the
+plugin itself: its C++ and earshot's, compiled unmodified to WebAssembly.
+**There's no audio and no microphone in the page.** The meters are driven by a
+generated test signal (a 0 VU step, a −20 dB step, 5 ms bursts, a ladder of
+burst lengths, pink noise), which the page itself shapes into a 64-bin spectrum.
+That isn't Resolume's FFT (the host's calibration is unknown and isn't
+reproduced), and the port's only check is someone reading it. The VFD is fed
+generated signals (a drum-and-bass track, the test harness's own programme,
+third-octave tones, a sweep, pink noise, silence) through earshot's `feed()`,
+the path a capture device's samples take; the page never lists or opens an
+audio device, so Audio Input and Rescan Inputs aren't on its panel. The shader
+copies, the harness's signal and the WebAssembly's inputs are checked by
+`demo/tools/check_shaders.py`, run by `tools/verify.sh`, and the VFD's pictures
+match the test harness's to within one code in a few dozen pixel values
+(`demo/tools/crosscheck.py`). See
+`demo/README.md`.
 
 ## Installing
 

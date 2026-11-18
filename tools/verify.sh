@@ -162,21 +162,26 @@ else
 fi
 
 #---------------------------------------------------------------------------
-# The browser demo's copy of the shaders.
+# The browser demo's copies of the plugin.
 #
 # demo/plugin.js carries source/Shaders.cpp's GLSL -- the vertex shader and the
-# fragment shader's two raw strings -- and two copies of a shader drift quietly,
-# because a demo that renders a plausible meter looks exactly like one that
-# renders the right one. ndtest has no idea the page exists, so this is the only
-# thing holding the page's claim to be running the plugin's own shader.
+# fragment shader's two raw strings -- and demo/vfd.js source/VfdShaders.cpp's,
+# and two copies of a shader drift quietly, because a demo that renders a
+# plausible meter looks exactly like one that renders the right one. ndtest has
+# no idea the page exists, so this is the only thing holding the page's claim
+# to be running the plugin's own shaders. The same script holds the VFD's
+# WebAssembly to its inputs (demo/wasm/inputs.sha256: a change under source/ or
+# external/earshot/, or a version bump, means rerun demo/tools/build-wasm.sh),
+# the glue's copy of ndtest's programme to ndtest, and the served files to
+# naming no audio-device API.
 #---------------------------------------------------------------------------
 step "demo shaders"
 if [ -f demo/tools/check_shaders.py ]; then
 	if out="$( python3 demo/tools/check_shaders.py 2>&1 )"; then
 		pass "$( printf '%s' "$out" | tail -1 )"
 	else
-		fail "the demo's shader copies have drifted from source/Shaders.cpp"
-		printf '%s\n' "$out" | tail -12
+		fail "the browser demo has drifted from the plugin (a shader copy, ndtest's programme, a device API or a stale .wasm)"
+		printf '%s\n' "$out" | grep -A3 '^FAIL' | head -24
 	fi
 else
 	printf '   skipped: demo/tools/check_shaders.py is not present\n'

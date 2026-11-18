@@ -2,9 +2,18 @@
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://intake.stoatworks-labs.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://intake.stoatworks-labs.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
-# Copied from vectrix's, which is the fleet's, and kept identical on purpose
+# 'wasm-unsafe-eval' is load-bearing and is the only addition to the fleet's
+# policy (woofer's precedent): Type = VFD runs the plugin compiled to
+# WebAssembly, needle-core.wasm, and a script-src without it refuses to compile
+# the module -- in PRODUCTION ONLY, because a local dev server does not apply
+# this file. It permits compiling WebAssembly and nothing else; eval and new
+# Function stay blocked (the module is built with DYNAMIC_EXECUTION=0 and needs
+# neither). The .wasm is fetched from 'self'. The four meters do not depend on
+# it: a refused module leaves them working and says so under the picture.
+#
+# The rest is copied from vectrix's, which is the fleet's, and kept identical on purpose
 # even though this page uses less of it: `media-src blob:` is there for the
 # kit's "use my own clip" file input, and needle is a SOURCE with no video
 # input at all, so the page removes that control. The directive stays because
