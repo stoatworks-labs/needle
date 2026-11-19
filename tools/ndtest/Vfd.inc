@@ -1956,13 +1956,14 @@ struct VfdFeed
 {
 	std::unique_ptr< Driver > d;
 	double                    level = -18.0, stop = -1.0, fps = 60.0;
+	Signal                    signal;///< --pcm's samples; the programme when empty
 
 	void Before( NeedlePlugin& p )
 	{
 		if( !p.IsVfd() )
 			return;
 		if( !d )
-			d = std::make_unique< Driver >( p, Programme( PerBandDb( level ), 9.0, kFeedRate, stop ), kFeedRate, fps );
+			d = std::make_unique< Driver >( p, signal ? signal : Programme( PerBandDb( level ), 9.0, kFeedRate, stop ), kFeedRate, fps );
 		d->Push( FrameSamples( d->frame++, fps, kFeedRate ) );
 	}
 };

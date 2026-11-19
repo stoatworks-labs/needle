@@ -83,6 +83,13 @@
 	frame rate; `--burst` cuts it to silence. The scripted device backend is
 	installed, so nothing opens.
 
+	`--pcm file.f32` replaces that programme with a recording: raw 32-bit float,
+	little-endian, mono, at 48 kHz (`ffmpeg -i in.wav -f f32le -ac 1 -ar 48000
+	file.f32`), fed through the same `feed()` from the first VFD frame and
+	silent once it runs out. Nothing is resampled, levelled or looped here: the
+	samples reach earshot as they are in the file. It was added for the v0.2.0
+	flash survey over Resolume's own demo stems.
+
 	`--spectrum` is macroblock's format: one line per video frame, 64 numbers,
 	`#` for comments. Each line is written into the Audio buffer through
 	`SetParamElementValue`, the same call a host makes, so what moves the
@@ -2632,6 +2639,7 @@ struct PipeOptions
 	double      level  = -18.0;
 	std::string scriptPath;
 	std::string spectrumPath;
+	std::string pcmPath;///< the VFD's audio: raw f32le mono at kFeedRate
 	std::vector< std::pair< std::string, std::string > > sets;
 };
 
@@ -2736,6 +2744,31 @@ int runPipe( const PipeOptions& o )
 		VfdFeed             vfdFeed;
 		vfdFeed.level = o.level;
 		vfdFeed.fps   = o.fps;
+		if( status == 0 && !o.pcmPath.empty() )
+		{
+			std::ifstream file( o.pcmPath, std::ios::binary );
+			auto          pcm = std::make_shared< std::vector< float > >();
+			if( file )
+			{
+				file.seekg( 0, std::ios::end );
+				const auto bytes = static_cast< size_t >( file.tellg() );
+				file.seekg( 0, std::ios::beg );
+				pcm->resize( bytes / sizeof( float ) );
+				file.read( reinterpret_cast< char* >( pcm->data() ), static_cast< std::streamsize >( pcm->size() * sizeof( float ) ) );
+			}
+			if( !file || pcm->empty() )
+			{
+				std::fprintf( stderr, "ndtest: cannot read %s as raw f32le samples\n", o.pcmPath.c_str() );
+				status = 1;
+			}
+			else
+			{
+				std::fprintf( stderr, "ndtest: %.3f s of audio from %s\n", static_cast< double >( pcm->size() ) / kFeedRate, o.pcmPath.c_str() );
+				vfdFeed.signal = [ pcm ]( long long k ) {
+					return k >= 0 && static_cast< size_t >( k ) < pcm->size() ? static_cast< double >( ( *pcm )[ static_cast< size_t >( k ) ] ) : 0.0;
+				};
+			}
+		}
 		std::vector< unsigned char > raw( static_cast< size_t >( o.width ) * o.height * 4 );
 		std::vector< unsigned char > out( raw.size() );
 		const size_t                 row = static_cast< size_t >( o.width ) * 4;
@@ -2897,6 +2930,8 @@ int main( int argc, char** argv )
 			po.scriptPath = argv[ ++a ];
 		else if( arg == "--spectrum" && a + 1 < argc )
 			po.spectrumPath = argv[ ++a ];
+		else if( arg == "--pcm" && a + 1 < argc )
+			po.pcmPath = argv[ ++a ];
 		else if( arg == "--level" && a + 1 < argc )
 			level = std::atof( argv[ ++a ] );
 		else if( arg == "--burst" && a + 1 < argc )
@@ -2937,6 +2972,6 @@ int main( int argc, char** argv )
 		"              [--burst MS] [--set Name=value ...]\n"
 		"       ndtest --pipe [--size WxH | --width W --height H] [--fps N] [--frames N]\n"
 		"              [--script cues.txt] [--spectrum bins.txt] [--level dBFS]\n"
-		"              [--set Name=value ...]   raw RGBA frames on stdout\n" );
+		"              [--pcm audio.f32] [--set Name=value ...]   raw RGBA frames on stdout\n" );
 	return 2;
 }
