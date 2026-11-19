@@ -24,7 +24,7 @@ static CFFGLPluginInfo PluginInfo(
 	2,                                                       // API major version number
 	1,                                                       // API minor version number
 	0,                                                       // Plugin major version number
-	1,                                                       // Plugin minor version number
+	2,                                                       // Plugin minor version number
 	FF_SOURCE,                                               // Plugin type
 	"Audio meters with the ballistics their standards actually specify.\n\n"
 	"A VU whose movement is solved from ANSI C16.5 -- 99% of a step in 300 ms with 1 to 1.5% overshoot, "
@@ -34,7 +34,11 @@ static CFFGLPluginInfo PluginInfo(
 	"persistence and a target that can be worn out.\n\n"
 	"The ballistics are integrated on the CPU at 4800 Hz, so a 60 fps frame cannot alias a 300 ms movement. "
 	"Standard locks every constant to its specification; Free hands the rise, the fall and the overshoot "
-	"back. Reads the host's spectrum, summed over every bin.",// Plugin description
+	"back. The meters read the host's spectrum, as the RMS over every bin.\n\n"
+	"Type = VFD is a 1980s hi-fi fluorescent spectrum display: 31 third-octave columns (or 10 octaves) "
+	"from an IEC 61260 filter bank, peak dots that hold and fall, filament wires across the glass, and a "
+	"multiplexed scan a camera Shutter can catch. It listens to an audio device you choose, through the "
+	"earshot library; the other four Types never touch your audio hardware.",// Plugin description
 	"Needle FFGL source"                                     // About
 );
 
