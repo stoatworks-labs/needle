@@ -36,8 +36,9 @@ than captured from Resolume.*
 > so you can flip the one assumption that would otherwise be buried. On Windows, the v0.2.0 release
 > loads, registers as a source and draws its meters in Resolume Arena 7.27.1, with every control
 > Arena lists matching what the plugin declares. That was on software rendering, on a machine
-> with no sound device, so the audio path hasn't been heard there either, and the VFD wasn't
-> tried. Try it on a spare layer before you
+> with no sound device, so the audio path hasn't been heard there either. The VFD ran there too,
+> dark with its amber lamp because there was no device to choose, and none of its controls upset
+> Arena. Try it on a spare layer before you
 > put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -433,8 +434,10 @@ Nothing has been timed on Windows or inside Resolume.
   vectrix), so if the panel looks unchanged after updating, drop needle into a fresh clip.
 - **The VFD has never been fed a real device in a host.** The macOS microphone prompt hasn't been
   seen, and whether Resolume refreshes the **Audio Input** menu after **Rescan Inputs** is
-  unknown; if a new device doesn't appear, put needle in a fresh clip. On Windows the VFD builds
-  and the plugin loads in Arena 7.27.1, but the VFD itself has never run.
+  unknown; if a new device doesn't appear, put needle in a fresh clip. On Windows the VFD has run
+  in Arena 7.27.1 only on a machine with no sound device. It drew its dark glass and amber lamp,
+  listed no devices, and kept Arena up through every control, but it has never shown a spectrum
+  there.
 - **The VFD flashes with Shutter above 0**: see [Shutter and flashing](#shutter-and-flashing).
 - Text is pixel-exact only at Rotation 0. No factory presets and no OpenFX port.
 - **There's a browser demo** at [needle-demo.stoatworks-labs.com](https://needle-demo.stoatworks-labs.com).

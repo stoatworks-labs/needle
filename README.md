@@ -264,7 +264,8 @@ The physics checks (`--ballistics --ppm --steps --eye --prime --rate --friction
 --defaults --names --font`) passed on the runner; the pixel and sweep steps
 passed there too (`ndtest --pixels`, and the sweep at 160x90). The Windows x64 DLL was compiled with MSVC on GitHub's Windows runner and
 the job passed. On 2026-11-16 (e512e2b) the same job compiled earshot and its
-miniaudio with MSVC, so the VFD builds for Windows; it has never run there. From
+miniaudio with MSVC, so the VFD builds for Windows. It has since run there in
+Arena with no device (below). From
 v0.2.0 the macOS job also runs the VFD's no-GL checks (`--iec`, `--hold`,
 `--coreaudio`).
 
@@ -334,6 +335,31 @@ v0.2.0 the macOS job also runs the VFD's no-GL checks (`--iec`, `--hold`,
     prompt came. Status Lamp Off removed the lamp. 10 Octaves stayed dark.
   - Back on the VU, the frame matched the one from before the switch, code value
     for code value.
+- **In Resolume Arena 7.27.1 on Windows** (2026-11-19, over Arena's REST API).
+  This was the v0.2.0 release zip's own `Needle.dll` on win-lab, an x64
+  Windows 11 VM with no GPU (Mesa llvmpipe) and no sound device.
+  - Type = VFD, set by value, rendered the same picture as on the Mac,
+    scaled to the frame. The lamp sat at (993, 259) of 1280×720, against
+    (1490, 389) of 1920×1080 on the Mac, in the same amber (mean RGB 247, 153,
+    13 against 250, 155, 13).
+  - With no device it was dark with its amber lamp and lit no segment. Ten
+    thumbnails over about 10 s were identical.
+  - Arena listed the same 26 controls as on the Mac. The plugin listed 0
+    devices and opened none, and Audio Input stayed on None (host FFT).
+  - Every other control Arena lists on the VFD was tried: each range at both
+    ends and each choice through every option, then put back. That covered
+    Reference Level, Sensitivity, Peak Hold, Hold Decay, Size, Position X and
+    Y, Rotation, Background and its colour, Mix, Bands, Multiplex Rate, Shutter
+    and Status Lamp. Rescan Inputs was pressed once, and it listed 0 devices
+    again.
+  - Arena answered after every write and stayed one process, with the same
+    pid throughout. Its log gained no error lines.
+  - With nothing lit, the controls that act on lit segments (the levels, the
+    peak hold, Bands, Multiplex Rate and Shutter) left the picture unchanged.
+    Size, Position, Rotation, Background and Mix changed it as they should,
+    and Status Lamp Off removed the lamp.
+  - Back on the VU, the frame matched the one from before the switch exactly,
+    and Arena listed 31 controls again.
 
 What isn't verified for the VFD:
 
@@ -341,7 +367,8 @@ What isn't verified for the VFD:
   with a real audio device.
 - So the macOS microphone prompt hasn't been seen.
 - Whether Resolume refreshes the device menu after **Rescan Inputs** is unknown.
-- earshot compiles for Windows but has never run there.
+- On Windows, earshot has run only on a machine with no sound device, where it
+  listed none.
 
 What isn't verified yet:
 
@@ -379,10 +406,11 @@ What isn't verified yet:
   moved the picture (4 of them under a precondition, such as Background on for the
   background colour); the 5 that act on audio (Reference Level, Sensitivity, Bin
   Law, Standard and the Audio input) were skipped, because win-lab has no sound
-  device. The gate tries only the first three Types, so the VFD has never run on
-  Windows; its Windows build is CI's MSVC compile and this gate's load. Windows
-  hasn't heard real audio either, and the gate says nothing about speed or a real
-  GPU.
+  device. The gate tries only the first three Types, so the VFD was then run by
+  hand in the same Arena that day (above, under the VFD). It rendered and stayed
+  dark with its amber lamp with no device, and none of its controls upset Arena.
+  Windows hasn't heard real audio, and neither check says anything about speed or
+  a real GPU.
 - **Real audio in a host**, only twice:
   - A user's Resolume rig running v0.1.1
     ([#1](https://github.com/stoatworks-labs/needle/issues/1)), which is how the

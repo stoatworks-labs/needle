@@ -40,7 +40,7 @@ for): about 20 s locally. The VFD's picture checks stay in `verify.sh`, since
 on the runner's software renderer they cost minutes apiece.
 
 **Resolume on macOS: one session, 2026-11-19, v0.2.0, Arena 7.29.0, over REST**
-(what it showed is in the v0.2.0 paragraph below). On Windows: the v0.2.0 release zip's own DLL passed the fleet's Arena gate 9 of 9 on 2026-11-19 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, the 31 params listed at the defaults as declared (Arena lists only the shown ones; plugin-bench's `needle.json` is cut to those 31), renders, 21 controls move the picture; the 5 audio-driven controls were skipped because the box has no sound device. The gate sweeps only the first three options of a choice, so it never selects Type = VFD. (v0.1.0's CI build passed the same gate on 2026-09-23 with 37 params, before v0.1.2 began hiding.) No real audio has reached
+(what it showed is in the v0.2.0 paragraph below). On Windows: the v0.2.0 release zip's own DLL passed the fleet's Arena gate 9 of 9 on 2026-11-19 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, the 31 params listed at the defaults as declared (Arena lists only the shown ones; plugin-bench's `needle.json` is cut to those 31), renders, 21 controls move the picture; the 5 audio-driven controls were skipped because the box has no sound device. The gate sweeps only the first three options of a choice, so it never selects Type = VFD. Type = VFD was then run by hand in the same Arena (REST, 2026-11-19, the release zip's DLL): it renders (lamp where the Mac puts it, scaled), stays dark with its amber lamp with no device (0 listed, none opened, Audio Input on None (host FFT)), Arena lists the same 26 controls, and every VFD control at both ends or through every option, plus one Rescan Inputs press, left Arena up as one process with a clean log; back on the VU the frame matched the pre-switch one exactly. (v0.1.0's CI build passed the same gate on 2026-09-23 with 37 params, before v0.1.2 began hiding.) No real audio has reached
 it in a host except on the needle#1 rig (v0.1.1, below), so Resolume's 64-bin FFT mapping is still assumed (`Bin Law`).
 The universal build has never run on an Intel Mac, and every render-cost figure
 is Apple Silicon only. There are no factory presets and no OpenFX port.
@@ -89,7 +89,8 @@ to 840193c, and at release to the v0.1.2 tag's own ndtest: 48 of 48 frames at
   programme.
 - **The VFD's no-GL checks in `ci.yml`.**
 
-Still never in a host with a real audio device, and never run on Windows. See
+Still never in a host with a real audio device; on Windows it has run only with no
+sound device (win-lab's Arena, 2026-11-19). See
 "The VFD spectrum analyser".
 
 ## The one idea
