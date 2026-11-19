@@ -44,6 +44,22 @@ jobs:
             ./build/ndtest "--$t"
           done
 
+      - name: The VFD (no GL)
+        # Type = VFD's bands against IEC 61260 class 1 and its peak hold at four
+        # frame rates, fed through earshot's feed() on the harness's scripted
+        # capture backend, so no audio device is listed or opened. Like the
+        # physics, neither opens a GL context. --coreaudio installs the REAL
+        # backend and proves that with the VFD off nothing reaches it, so it runs
+        # without NEEDLE_NO_DEVICES (the gate would hide the call it looks for).
+        # The VFD's picture checks, its negatives and the mutants stay in
+        # tools/verify.sh: on this runner's software renderer they cost minutes
+        # apiece.
+        run: |
+          for t in iec hold; do
+            NEEDLE_NO_DEVICES=1 ./build/ndtest "--$t"
+          done
+          ./build/ndtest --coreaudio
+
       - name: Pixels
         # The one check that needs a rasteriser. It asserts flat interiors at
         # coordinates the plugin itself produced, at two rasters, so it should
