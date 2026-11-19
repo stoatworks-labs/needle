@@ -3,7 +3,7 @@
 Audio meters with the ballistics their standards actually specify, as an FFGL
 **source** for Resolume Arena/Avenue, plus a fifth Type, a VFD spectrum
 analyser on earshot's third-octave bank (`specs/SPEC-needle-vfd.md` in the
-specs folder beside the repos; unreleased). C++/GLSL, CMake MODULE →
+specs folder beside the repos; shipped in v0.2.0). C++/GLSL, CMake MODULE →
 universal `.bundle` (macOS) + Windows `.dll`. MIT.
 
 Read `AGENTS.md` before touching anything in `source/meter/`, the scale
@@ -15,6 +15,8 @@ mappings or a tolerance in the harness.
 - Build: `cmake --build build`
 - Install into Arena: `cmake --install build`
 - Render a frame offline: `./build/ndtest --out /tmp/f.png --size 1920x1080 --level -18`
+- Feed the VFD a recording: `ffmpeg -i in.wav -f f32le -ac 1 -ar 48000 a.f32`, then
+  `NEEDLE_NO_DEVICES=1 ./build/ndtest --pipe --set Type=4 --pcm a.f32 | ffmpeg -f rawvideo -pix_fmt rgba -s 1280x720 -r 60 -i - out.mkv`
 - Set anything by name: `--set "Type=2" --set "Reference Level=0.55"`
 - Feed it a signal: `--level -18` (dBFS), `--burst 150` (ms, then silence)
 - List parameters: `./build/ndtest --list`
@@ -125,28 +127,36 @@ mappings or a tolerance in the harness.
 - FFGL id is `ND01`.
 
 ## Released
-- Public at github.com/stoatworks-labs/needle (created 2026-09-23); v0.1.0
-  released on 2026-09-23. Registered in the website's `projects.json` (beta,
+- Public at github.com/stoatworks-labs/needle (created 2026-09-23); v0.1.0 and
+  v0.1.1 released on 2026-09-23, v0.1.2 on 2026-10-11, v0.2.0 (the VFD) on
+  2026-11-19. Registered in the website's `projects.json` (beta,
   guide) and in stoatworks-backend's sync-about TARGETS, `names.json`,
   `visibility.json` and `derived.json`.
 - CI on GitHub: `ci.yml`'s macOS job runs on a runner with no GPU, so the
   harness falls back to Apple's software renderer. The physics checks passed
   on the runner; the pixel and sweep steps passed there too (`ndtest --pixels`, and the sweep at 160x90). The Windows x64 DLL compiles
-  with MSVC on GitHub's Windows runner (passed).
+  with MSVC on GitHub's Windows runner (passed), earshot and miniaudio included
+  since e512e2b. From v0.2.0 the macOS job also runs `--iec --hold --coreaudio`.
 
 ## Not done yet
-- **Never loaded into Resolume on macOS, and not installed into it there.**
-  Everything on the Mac is the offline harness driving the real plugin class.
+- **Resolume on macOS: one REST session** (2026-11-19, v0.2.0, Arena 7.29.0).
+  It loads, Arena honours the hiding (31 params listed on a VU, 26 on the VFD),
+  and the meters move to `Beat 001.wav`, but low at the defaults (the VU near
+  -20, the PPM on its stop). The inspector itself hasn't been looked at.
 - Windows in Resolume Arena: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device.
-- No real audio has reached it in a host except on the needle#1 rig (v0.1.1); Resolume's 64-bin FFT mapping is
+- Real audio in a host: the needle#1 rig (v0.1.1) and Arena's demo loop on this Mac
+  (above). Resolume's 64-bin FFT mapping is
   assumed (`Bin Law`), not measured. The RMS footing (needle#1) is a better guess, not a number.
-- The control hiding (needle#1) has not been seen in Resolume; vectrix measured Arena honouring it.
 - The universal build has never run on an Intel Mac. Cost figures are
   Apple Silicon only.
 - No presets, no OpenFX port.
-- **The VFD has never been in a host with a real device**: everything is the harness on a scripted
-  backend, plus oxbow with `NEEDLE_NO_DEVICES=1`. earshot has never been compiled by MSVC, and
-  `ci.yml` runs none of the VFD checks.
+- **The VFD has never been in a host with a real device.** In Arena (no device chosen) it was
+  dark with the amber lamp, as designed. Everything else is the harness on a scripted backend,
+  plus oxbow with `NEEDLE_NO_DEVICES=1`. The mic prompt hasn't been seen, Rescan's menu refresh
+  in Resolume is unknown, and it has never run on Windows.
+- **Shutter > 0 flashes** (up to 30 a second in part of the frame, at 60 fps): the README, the
+  guide and the demo carry a warning; the default (0) is 2 a second or under. AGENTS.md,
+  "Flashing".
 
 ## Browser demo
 - Live at https://needle-demo.stoatworks-labs.com (Cloudflare Worker `needle-demo`,

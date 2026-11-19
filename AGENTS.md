@@ -3,7 +3,8 @@
 An FFGL **source** plugin (`ND01`) that draws four audio meters — a VU, a peak
 programme meter, an LED bargraph and a magic eye — each moving the way its
 standard says it must. A fifth Type, a VFD spectrum analyser on earshot's
-third-octave bank, is built and unreleased: see "The VFD spectrum analyser".
+third-octave bank, shipped in v0.2.0 (2026-11-19): see "The VFD spectrum
+analyser".
 
 `CLAUDE.md` is the command reference; this file is the *why*.
 
@@ -17,7 +18,8 @@ the dead band a worn pivot leaves, the defaults, the names, the font, the pixel 
 dead-control sweep, registration, lipo, plist, ad-hoc codesign and oxbow.
 
 Released at v0.1.0 on 2026-09-23, v0.1.1 the same day (the Stereo Pair fix,
-below) and v0.1.2 on 2026-10-11 (needle#1, below), public at github.com/stoatworks-labs/needle
+below), v0.1.2 on 2026-10-11 (needle#1, below) and v0.2.0 on 2026-11-19 (the
+VFD, below), public at github.com/stoatworks-labs/needle
 (created the same day), and registered with the website (`projects.json`, beta,
 guide) and with stoatworks-backend's sync-about TARGETS, `names.json`,
 `visibility.json` and `derived.json`. The user guide is `docs/USER-GUIDE.md`,
@@ -30,9 +32,15 @@ GPU, so the harness falls back to Apple's software renderer — a second
 rasteriser. The physics step (`--ballistics --ppm --steps --eye --prime --rate
 --friction --defaults --names --font`) passed on the runner; the pixel and
 sweep steps passed there too (`ndtest --pixels`, and the sweep at 160x90). The Windows job compiled the x64 DLL with MSVC and passed.
+On 2026-11-16 (e512e2b) the Windows job compiled earshot and miniaudio with
+MSVC for the first time and passed. From v0.2.0 the macOS job also runs the
+VFD's no-GL checks (`--iec --hold` under `NEEDLE_NO_DEVICES=1`, then
+`--coreaudio` without it, because the gate would hide the very call it looks
+for): about 20 s locally. The VFD's picture checks stay in `verify.sh`, since
+on the runner's software renderer they cost minutes apiece.
 
-**It has never been loaded into Resolume on macOS, and it has not been
-installed into Arena there.** On Windows: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device. No real audio has reached
+**Resolume on macOS: one session, 2026-11-19, v0.2.0, Arena 7.29.0, over REST**
+(what it showed is in the v0.2.0 paragraph below). On Windows: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device. No real audio has reached
 it in a host except on the needle#1 rig (v0.1.1, below), so Resolume's 64-bin FFT mapping is still assumed (`Bin Law`).
 The universal build has never run on an Intel Mac, and every render-cost figure
 is Apple Silicon only. There are no factory presets and no OpenFX port.
@@ -59,11 +67,30 @@ each old rule put back). All of `tools/verify.sh` passes. **None of it has been
 in Resolume**: the calibration is a better-grounded guess, not a measurement, and
 the hiding is vectrix's Arena result, not needle's.
 
-**The VFD (Type = VFD), 2026-11-16, unreleased.** Built on branch `claude/vfd`
-with every check below passing on this Mac, GPU and Apple's software renderer;
-the four meters render byte-identically to 840193c. Never in Resolume, never in
-any host with a real audio device, earshot never compiled by MSVC, and
-`ci.yml` runs none of its checks. See "The VFD spectrum analyser".
+**v0.2.0, released 2026-11-19: the VFD (Type = VFD).** Built on branch
+`claude/vfd` on 2026-11-16, with every check below passing on this Mac on the
+GPU and on Apple's software renderer. The four meters render byte-identically
+to 840193c, and at release to the v0.1.2 tag's own ndtest: 48 of 48 frames at
+1280x720 (Types 0-3, Mono and Stereo Pair, -40, -18 and -6 dBFS, frames 1 and
+45). The release round added:
+
+- **Arena 7.29.0 on this Mac**, over REST. ND01 mounted. It listed 31 params
+  on a VU with Standard on and 26 on the VFD, so Arena honours the hiding for
+  needle too. A VU in silence was still (0.0 between snapshots). With
+  `Beat 001.wav` on layer 1 and Audio = Composition, all four meters moved,
+  but low: at the defaults the VU sat near -20 VU and the PPM stayed on its
+  stop; at Sensitivity 1 they reached about -15 VU and mark 2. The VFD stayed
+  dark with the amber lamp through the music. The log said "12 device(s)
+  listed" and there was no select, so no device was opened and no prompt came.
+  Status Lamp Off removed the lamp. VU after VFD matched VU before, to 0.0.
+- **The flash survey** (below, "Flashing"). Shutter > 0 crosses 3 a second, so
+  the README, the guide and the demo carry a warning. The defaults are as built.
+- **`ndtest --pipe --pcm`** feeds the VFD a raw f32le recording instead of the
+  programme.
+- **The VFD's no-GL checks in `ci.yml`.**
+
+Still never in a host with a real audio device, and never run on Windows. See
+"The VFD spectrum analyser".
 
 ## The one idea
 
@@ -516,8 +543,9 @@ The design, every source and the reasoning behind each number is
 `specs/SPEC-needle-vfd.md` (the Stoatworks specs folder, beside the repos);
 this section is what was built, what it measures, and what bit.
 
-**Unreleased.** On branch `claude/vfd`, 2026-11-16. No version bump, no
-release notes, never in a host with a real device, never in Resolume.
+**Released in v0.2.0, 2026-11-19.** Built on branch `claude/vfd`, 2026-11-16.
+In Resolume only with no device chosen (Arena 7.29.0 on this Mac, dark and
+amber as designed); never in a host with a real device.
 
 ### What it is
 
@@ -612,7 +640,8 @@ copy of the formula under test.
 
 **Cost** (`ndtest --bench`, arm64, fastest of five passes of 200 frames): the
 VFD 0.583 ms/frame at 1280×720 and 0.593 at 1920×1080, the meters 0.015 and
-0.013. Flat across rasters, so it is earshot's analysis and the harness's
+0.013 (2026-11-16); on the v0.2.0 tree 0.589 and 0.601, the meters 0.011 and
+0.014. Flat across rasters, so it is earshot's analysis and the harness's
 `feed()`, not the shader. Apple Silicon only.
 
 **C1 counts calls at earshot's three CoreAudio-capable entry points**
@@ -737,6 +766,39 @@ the gate, so the 3 extra came from the gate.
 - **The geometry is a design**, not a product's drawing: glass 100 × 30 mm,
   field 93 × 24 mm, segments 2.2 × 1.5 mm, wires across rows 1, 4, 7 and 10.
 
+### Flashing (the v0.2.0 survey)
+
+The survey used rubens' `flashcheck.py`. It counts transitions in linear
+luminance: a change of 0.1 of white, with the darker end below 0.8, and more
+than 6 in any second fails. It ran over the whole frame and 5×5 windows a third
+of the frame across. The renders were `ndtest --pipe --set Type=4 --pcm <clip>.f32`
+at 1280x720, 60 fps, 900 frames, over the demo clips' audio. Each clip was
+`ffmpeg -f f32le -ac 1 -ar 48000`; the mixes were mastered to about
+-11.7 dBFS RMS.
+
+- **The defaults (Shutter 0):** worst window 1.0 a second, whole frame 0.
+- **The fastest ballistics** (Size 1, Sensitivity 1, Peak Hold 0.1, Hold Decay
+  1, thirds or octaves): 2.0.
+- **Shutter > 0 crosses 3 a second.** The exposure E against the scan f decides
+  how much of a scan each frame catches (E·f), and the frame rate decides how
+  fast that slice drifts (the distance of f from a multiple of fps). Results:
+  - 1/60 s at 50 Hz: 10.5. At 100 Hz: 2.5.
+  - 1/125 s at 50, 55, 70 and 100 Hz: 10.5, 5.5, 10.5 and 19.
+  - 1/250 s and 1/500 s at 100 Hz: 20; at 150 Hz: 30.
+  - At 200 Hz: at most 0.5.
+  - 1/1000 s and shorter: at most 1.0, too little of the scan caught to clear
+    0.1 of white in a window.
+  - At the default Size: 10 at 1/125 s and 50 Hz, and at 1/250 s and 100 Hz.
+  - The whole frame never crossed. Every crossing is a band rolling through
+    part of the display.
+- **Pattern** (`flashcheck.pattern`): the striped-row share peaked at 21.6 %
+  (the fast ballistics, Size 1) and was never over 25 % for any second.
+  ITU-R BT.1702 and Ofcom start their pattern rule at a quarter of the screen.
+
+Allan's rule for the round: anything over 3 a second gets a warning in the
+README, the guide and the demo; the defaults stay. Re-run the survey if the
+scan or the shutter model changes.
+
 ## Open questions
 
 - **What Resolume actually puts in those 64 bins.** Magnitude or power, what
@@ -754,18 +816,25 @@ the gate, so the 3 extra came from the gate.
 - **Whether four instruments in one plugin is right**, or whether the bargraph
   and the eye want to be their own sources with their own controls. As it stands
   a third of the parameters do nothing on any given Type.
-- **The VFD, before it ships** (each is Allan's call):
-  - dark with an amber lamp when no device is chosen: enough, or should it say
-    more?
-  - its six controls sit below About because of the append rule; Controls.h
-    says ids may move. Keep, or move them up in a release?
-  - `ATTRIBUTIONS.md` and `StoatworksAbout.h` are generated and do not yet name
-    earshot or miniaudio: stoatworks-backend's sync has to add them;
-  - earshot has never been compiled by MSVC, so the public Windows CI job would
-    be its first, and `ci.yml` runs none of the VFD checks;
-  - pushing this branch publishes the earshot snapshot in a public repo;
-  - whether Resolume honours `FF_EVENT_FLAG_ELEMENTS` (Rescan refreshing the
-    menu), and what the macOS microphone prompt looks like inside Resolume;
+- **The VFD after v0.2.0.** It shipped as built. These were settled at
+  release:
+  - earshot and miniaudio are credited (backend `derived.json`, woofer's
+    pattern);
+  - MSVC compiled earshot (e512e2b);
+  - `ci.yml` runs the no-GL VFD checks;
+  - the snapshot is public, and its `Source:` line is the public URL.
+
+  Still open (each is Allan's call):
+  - Dark with an amber lamp when no device is chosen: enough, or should it say
+    more? The guide's troubleshooting now says outright that the VFD never
+    reads Resolume's audio.
+  - Its six controls sit below About because of the append rule. Controls.h
+    says ids may move. Moving them now would break v0.2.0 compositions.
+  - Shutter > 0 flashes (above). Keep the range, or clamp it away from the
+    beats?
+  - Whether Resolume honours `FF_EVENT_FLAG_ELEMENTS` (Rescan refreshing the
+    menu), and what the macOS microphone prompt looks like inside Resolume.
+    Both need a real device in Arena;
   - `ToOption`'s normalised path (a host sending 0..1 for an option) maps Type
     differently with five elements than four. Resolume sends element values,
     which are unchanged; a host that sends normalised values would see Type

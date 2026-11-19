@@ -2,7 +2,8 @@
 
 Needle is four audio meters for [Resolume](https://resolume.com) Arena and Avenue, as an FFGL
 source: a VU, a BBC-style peak programme meter, an LED bargraph and a magic eye, drawn live at the
-output's own raster and moving with the ballistics their standards actually specify.
+output's own raster and moving with the ballistics their standards actually specify. From v0.2.0
+there's a fifth Type, a 1980s VFD spectrum analyser.
 
 You don't get to choose how the needle moves. A VU's damping and natural frequency are solved in
 code from the two figures ANSI C16.5 gives, a PPM's time constants from IEC 60268-10's, and
@@ -13,16 +14,23 @@ nothing was tuned until it looked right.
 *A stereo pair just past 0 VU, rendered by the plugin's own offline harness (`ndtest`) rather
 than captured from Resolume.*
 
-> **Before you rely on this:** it's at **v0.1.2**, and still early days. The ballistics are
+> **Photosensitivity warning:** on the VFD, a **Shutter** above 0 makes a dark band roll through
+> the display, measured at up to **30 flashes a second** in part of the frame. Shutter 0, the
+> default, measured 2 a second or under. See [Shutter and flashing](#shutter-and-flashing).
+>
+> **Before you rely on this:** it's at **v0.2.0**, and still early days. The ballistics are
 > measured rather than taken on trust, against the engine itself rather than pixels: a step to
 > 0 VU reaches 99 % in **300.000 ms** and overshoots by **1.2500 %** (the standard allows
 > 300 ± 5 ms and 1.0–1.5 %); a PPM falls 20 dB in **2.800000 s**; the bargraph's ten thresholds,
 > recovered by bisecting on the input, are **3.000000 dB** apart; and the same half second of
-> signal reads identically at 24, 30, 50, 60 and 144 fps. All 31 controls are confirmed to change
+> signal reads identically at 24, 30, 50, 60 and 144 fps. All 35 controls are confirmed to change
 > the picture.
 >
-> It has **never been loaded into Resolume on macOS**, and the only real audio it has had in a
-> host was on a user's Resolume rig running v0.1.1 (needle#1). Everything above is the offline harness driving the real plugin class. Resolume hands a
+> Those figures come from the offline harness driving the real plugin class. In Resolume, v0.2.0
+> has had one session in Arena 7.29.0 on a Mac, driven over Arena's REST API. It loaded, and the
+> meters moved to Resolume's own demo loop, but low: the VU reached about −20 VU at the default
+> settings. The VFD stayed dark, as designed, because no device was chosen. Before that, the only
+> real audio it had in a host was on a user's Resolume rig running v0.1.1 (needle#1). Resolume hands a
 > plugin a 64-bin spectrum, and nobody has measured whether those bins are magnitudes or powers, or
 > what level a full-scale tone produces, so the calibration is nominal, and **Bin Law** is there
 > so you can flip the one assumption that would otherwise be buried. On Windows, a build of v0.1.0
@@ -270,7 +278,7 @@ borrows the VU's.
 
 ---
 
-## The VFD spectrum analyser (not yet released)
+## The VFD spectrum analyser (new in v0.2.0)
 
 ![A VFD spectrum display: 31 blue-green columns with peak dots](vfd.png)
 
@@ -278,14 +286,15 @@ borrows the VU's.
 
 The fifth **Type** is a 1980s hi-fi spectrum display: a vacuum fluorescent tube with a column of
 segments per band, lit one column at a time by a multiplexed scan and seen through the filament
-wires that cross the glass. It is in the source but not in a release, and it has never been in
-Resolume, so treat everything here as a description of what's coming.
+wires that cross the glass. It has been in Resolume (Arena 7.29.0 on a Mac) only with no device
+chosen, so the description of a lit display below comes from the offline harness.
 
 **It listens to an audio device, not to Resolume.** Resolume's 64-bin spectrum can't make a
 third-octave display (nobody knows what the bins are, and a 64-bin linear spectrum has no bin
 inside the low bands), so the VFD analyses audio itself, through the Stoatworks earshot library,
 from the device you pick in **Audio Input**. Until you pick one the display is dark and the status
-lamp is amber. Nothing is listed or opened until you switch Type to VFD: on the other four Types the
+lamp is amber, even with music playing in Resolume: in Arena on a Mac, with Resolume's demo loop
+reaching the layer, it stayed dark and amber, as designed. Nothing is listed or opened until you switch Type to VFD: on the other four Types the
 plugin never touches your audio hardware. The first time a device is opened, macOS should ask
 whether Resolume may use the microphone (the plugin runs inside Resolume, so the prompt names
 Resolume); that hasn't been tried yet.
@@ -317,11 +326,44 @@ The controls the VFD adds, shown only when Type is VFD:
   time, very fast. To the eye that's invisible, so at Shutter 0 (the eye) Multiplex Rate changes
   nothing on screen, by design. Turn Shutter up and you see the display as a camera with a rolling
   shutter would, from 1/24 s to 1/8000 s: a short shutter catches diagonal slices of the scan, and a
-  shutter that's a whole number of scans long shows the steady picture again.
+  shutter that's a whole number of scans long shows the steady picture again. Read the next
+  section before you raise Shutter.
 - **Status Lamp**: Off or On.
 
 On the VFD, Count, Bin Law, the ballistics and the Look group are hidden, because the VFD reads
 none of them; Reference Level, Sensitivity, Peak Hold, Hold Decay and the Layout group still apply.
+The VFD's own controls sit at the bottom of the panel, below the About group.
+
+### Shutter and flashing
+
+**With Shutter above 0 the VFD flashes, fast.** The camera's exposure beats against the tube's
+scan, so a dark band rolls through the display several times a second. Rendered at 60 fps and
+measured with a flash checker (a change of a tenth of white, in each third of the frame), the worst
+part of the frame flashed:
+
+| Shutter | Multiplex Rate | Flashes a second |
+| --- | --- | --- |
+| 0 (the eye, the default) | any | 2 or under |
+| 1/60 s | 50 Hz | 10.5 |
+| 1/60 s | 100 Hz (the default), 500 Hz | 2.5, 1.5 |
+| 1/125 s | 50, 70, 100 Hz | 10.5, 10.5, 19 |
+| 1/250 s or 1/500 s | 100 Hz | 20 |
+| 1/250 s or 1/500 s | 150 Hz | 30 |
+| 1/125 s to 1/500 s | 200 Hz | under 1 |
+| 1/1000 s and shorter | 50, 100, 500 Hz | 1 or under |
+
+Those were measured at Size 1 and Sensitivity 1. At the default Size, two settings still reached
+10 a second: 1/125 s at 50 Hz, and 1/250 s at 100 Hz. The whole frame never crossed three a
+second; the band covers part of the display at a time.
+
+Broadcast guidance (Ofcom, ITU-R BT.1702) treats more than three flashes a second as potentially
+harmful to people with photosensitive epilepsy. **Leave Shutter at 0 for anything an audience will
+see**, or check your output with a flash analyser first. The rate also depends on your
+composition's frame rate, so a setting that's steady at one frame rate may flash at another.
+
+The pattern of segment rows and filament wires peaked at 21.6 % of the frame and never covered more
+than a quarter of it for any second. A quarter of the screen is where the same guidance's
+striped-pattern rule starts.
 
 ---
 
@@ -353,15 +395,19 @@ The CPU works out every position; the shader only draws.
 `ndtest --bench` measures **under 0.03 ms a frame at every raster from 720p to 4K** on Apple
 Silicon, which is under a fifth of one per cent of a 60 fps frame. That's as precise as the measurement
 gets: one pass is so cheap that the number is dominated by scheduling, and back-to-back passes at
-4K have ranged from 0.020 to 0.077 ms. Nothing has been timed on Windows or inside Resolume.
+4K have ranged from 0.020 to 0.077 ms. The VFD costs more: about **0.6 ms a frame** at 720p
+and 1080p, 3.6 % of a 60 fps frame. That is almost all the audio analysis, not the drawing.
+Nothing has been timed on Windows or inside Resolume.
 
 ---
 
 ## Known limits
 
-- **Never loaded into Resolume on macOS**, and the only real audio it has had in a host was on a
-  user's Resolume rig running v0.1.1 (needle#1). How the 31
-  controls in four groups look in Resolume's inspector is untested.
+- **One session in Resolume on macOS** (Arena 7.29.0, driven over REST). Real audio in a host:
+  that session's demo loop, and a user's Resolume rig running v0.1.1 (needle#1). How the controls
+  look in Resolume's inspector hasn't been looked at.
+- **On Resolume's own demo loops the meters read low** at the default settings: the VU near
+  −20 VU, the PPM on its stop. Raise Sensitivity or lower Reference Level.
 - **The calibration is nominal.** Whether a full-scale tone produces a bin of 1.0 depends on the
   host's window and normalisation, which the plugin can't discover. The level stands on the FFGL
   SDK's own footing, chosen after one report from a real Resolume rig; nobody has yet logged what
@@ -381,14 +427,19 @@ gets: one pass is so cheap that the number is dominated by scheduling, and back-
 - **Free at the defaults isn't identical to Standard.** The VU's rise and overshoot and the PPM's
   fall match; the VU's and eye's fall and the PPM's rise don't, because one Rise and one Fall
   control can't match both instruments' standards at once.
-- **Hiding controls is untested in Resolume for this plugin.** Arena honours it live (measured
-  for another Stoatworks plugin, vectrix), but needle's own panel hasn't been seen in Resolume.
-  Arena keeps the parameter layout a clip had when the plugin was first put in it (seen with
+- **Hiding controls works in Arena** (seen over REST on a Mac: 31 parameters listed on a VU, 26
+  on the VFD). Arena keeps the parameter layout a clip had when the plugin was first put in it (seen with
   vectrix), so if the panel looks unchanged after updating, drop needle into a fresh clip.
+- **The VFD has never been fed a real device in a host.** The macOS microphone prompt hasn't been
+  seen, and whether Resolume refreshes the **Audio Input** menu after **Rescan Inputs** is
+  unknown; if a new device doesn't appear, put needle in a fresh clip. On Windows the VFD builds
+  but has never run.
+- **The VFD flashes with Shutter above 0**: see [Shutter and flashing](#shutter-and-flashing).
 - Text is pixel-exact only at Rotation 0. No factory presets and no OpenFX port.
 - **There's a browser demo** at [needle-demo.stoatworks-labs.com](https://needle-demo.stoatworks-labs.com).
-  It's a port to a web page rather than the plugin: the shaders run in WebGL2 and any CPU
-  half is rewritten in JavaScript. The page lists what it doesn't reproduce.
+  The four meters are the plugin's shaders in WebGL2 over a JavaScript port of its engine; the VFD
+  is the plugin's own code compiled to WebAssembly, fed generated test signals rather than a
+  microphone. The page lists what it doesn't reproduce.
 
 ---
 
@@ -407,7 +458,8 @@ on it. The log also records the build, the GL driver, the solved ballistic const
 the host's clock arrives in.
 
 **It moves, but barely, or pins.** Move **Reference Level** (higher reads lower), then
-**Sensitivity**. Change **Bin Law** only if a 10 dB change at the source moves the meter 5 dB or
+**Sensitivity**. On Resolume's own demo loops, at the defaults, the VU sat near −20 VU and the PPM
+didn't leave its stop; Sensitivity 1 lifted them to about −15 VU and mark 2. Change **Bin Law** only if a 10 dB change at the source moves the meter 5 dB or
 20 dB (see Bin Law, above); on bins below 1.0, Power reads higher still.
 
 **The Ballistics group shows only Standard.** That's Standard on: switch it off for Rise, Fall and
@@ -415,7 +467,8 @@ Overshoot. Peak Hold and Hold Decay appear on the bargraph, Persistence on the m
 
 **Needle Red/Green/Blue does nothing.** It has no needle to colour on the magic eye.
 
-**The VFD is dark.** Look at the status lamp. Amber: no device is chosen in **Audio Input**.
+**The VFD is dark.** Look at the status lamp. Amber: no device is chosen in **Audio Input**. The
+VFD never reads Resolume's own audio, so a clip playing in Resolume won't light it.
 Blinking red: the chosen device isn't there (plug it in and press **Rescan Inputs**). Steady red:
 the device is open but sending silence, which on macOS may also mean Resolume hasn't been given
 microphone access (System Settings > Privacy & Security > Microphone). Green with nothing lit: the

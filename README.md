@@ -5,10 +5,10 @@
 > the standards, so they're measured rather than taken on trust, against the CPU engine
 > rather than rendered pixels: a step to 0 VU reaches 99 % of its deflection in
 > **300.000 ms** and overshoots by **1.2500 %**, a PPM falls 20 dB in **2.800000 s**, and the
-> bargraph's ten rungs, found by bisecting on the input, are **3.000000 dB** apart. All 31
+> bargraph's ten rungs, found by bisecting on the input, are **3.000000 dB** apart. All 35
 > controls change the picture, and the bundle registers and draws under the fleet's oxbow
-> host. **It has never been loaded into Resolume on a Mac.** How all that's measured, and
-> what isn't, is in the Status section below.
+> host and in Resolume Arena 7.29.0 on a Mac. How all that's measured, and what isn't, is
+> in the Status section below.
 
 Audio meters for Resolume Arena and Avenue that move the way their standards say
 they should: a VU, a PPM, an LED bargraph and a magic eye, drawn live at the
@@ -115,7 +115,7 @@ doesn't have a window to film, so the footage comes from this repo's offline
 harness (`ndtest --pipe`, driven by a cue sheet) rather than a screen recording,
 and the soundtrack is synthesised: what you hear is what the meters were fed.*
 
-### A fifth, not yet released: a VFD spectrum analyser
+### A fifth, new in v0.2.0: a VFD spectrum analyser
 
 ![A VFD spectrum display: 31 blue-green columns with peak dots](docs/vfd.png)
 
@@ -126,8 +126,16 @@ filament wires across the glass, and a multiplexed scan you can only see
 through a camera **Shutter**. It listens to an audio device you pick, through
 the Stoatworks earshot library, because Resolume's 64 bins can't make a
 third-octave display; on the other four Types needle never touches your audio
-hardware, not even to list it. It's in the source, not in a release, and it has
-never been in Resolume.
+hardware, not even to list it. Until you choose a device in **Audio Input** it
+stays dark with an amber status lamp: it never draws from Resolume's spectrum.
+
+> **Photosensitivity warning.** With **Shutter** above 0, the VFD's multiplexed
+> scan beats against the frame rate, and a dark band rolls through the display.
+> At 60 fps that measured up to **30 flashes a second** in a third of the frame,
+> ten times the three a second that broadcast guidance allows (Ofcom, ITU-R
+> BT.1702). At Shutter 0, the default, it measured 2 a second or under. Leave
+> Shutter at 0 if flashing could affect you or your audience. The measurements are
+> under Status.
 
 ## Controls
 
@@ -150,6 +158,7 @@ never been in Resolume.
 - **VFD** (shown only on the VFD, which also reads Reference Level,
   Sensitivity, Peak Hold, Hold Decay and the Layout group): Bands (31 Thirds /
   10 Octaves), Multiplex Rate, Shutter, Audio Input, Rescan Inputs, Status Lamp.
+  Shutter is 0, the eye, by default; read the warning above before raising it.
 
 Every ballistic default is the value at which Free agrees with Standard for
 the quantity it's named after: Rise and Overshoot give the VU's standard
@@ -190,7 +199,8 @@ That leaves three limits, and I'd rather you knew about them up front:
 
 ## Status
 
-**v0.1.2, released on 2026-10-11 (v0.1.0 and v0.1.1 on 2026-09-23), and still early days.**
+**v0.2.0, released on 2026-11-19, adds the VFD (v0.1.2 on 2026-10-11, v0.1.0 and v0.1.1 on
+2026-09-23). Still early days.**
 
 User guide: [docs/USER-GUIDE.md](docs/USER-GUIDE.md), also at
 https://stoatworks-labs.com/software/needle/guide/
@@ -234,9 +244,11 @@ What I've verified by measurement on this Mac (Apple Silicon, macOS 26.4):
   on every paired frame, on all four Types, whether the level fell or rose while
   the right one was hidden. v0.1.0 froze the hidden meter, and the same check
   catches that on 8 of 8 scenarios (fixed in v0.1.1).
-- **The picture.** Pixel-exact draws at 640×360 and 1920×1080; all **31**
-  controls change it; the bundle is universal, exports `plugMain`, signs, and
-  passes `oxbow selftest` as `ND01` / Needle / source.
+- **The picture.** Pixel-exact draws at 640×360 and 1920×1080; all **35**
+  controls change it (`tools/sweep.py`; Audio Input and Rescan Inputs reach real
+  devices, so `ndtest --devices` covers those two on a scripted backend instead);
+  the bundle is universal, exports `plugMain`, signs, and passes `oxbow selftest`
+  as `ND01` / Needle / source.
 - **Cost**, `ndtest --bench`: **under 0.03 ms/frame at every raster from 720p to
   4K**, which is under a fifth of one per cent of a 60 fps frame. That's as
   precise as the measurement gets: one pass is so cheap that the number
@@ -251,10 +263,14 @@ so the harness falls back to Apple's software renderer (a second rasteriser).
 The physics checks (`--ballistics --ppm --steps --eye --prime --rate --friction
 --defaults --names --font`) passed on the runner; the pixel and sweep steps
 passed there too (`ndtest --pixels`, and the sweep at 160x90). The Windows x64 DLL was compiled with MSVC on GitHub's Windows runner and
-the job passed.
+the job passed. On 2026-11-16 (e512e2b) the same job compiled earshot and its
+miniaudio with MSVC, so the VFD builds for Windows; it has never run there. From
+v0.2.0 the macOS job also runs the VFD's no-GL checks (`--iec`, `--hold`,
+`--coreaudio`).
 
-**The VFD (unreleased; measured on this Mac on 2026-11-16, `ndtest`, all on a
-scripted capture backend fed through earshot's `feed()`):**
+**The VFD (measured on this Mac on 2026-11-16 and again on the v0.2.0 tree on
+2026-11-19, `ndtest`, all on a scripted capture backend fed through earshot's
+`feed()`):**
 
 - **IEC 61260 class 1 bands** (read in IS 6964, its identical adoption): every
   centre within half a unit of Table A.1's five printed figures, every label
@@ -281,25 +297,71 @@ scripted capture backend fed through earshot's `feed()`):**
 - Every check has a planted bug it catches (`ndtest --negative`), and every
   one-character shader mutant in `tools/mutate.sh` is caught by the check it
   targets (and its no-op edit is not).
-- **Cost**, `ndtest --bench`: **0.583 ms a frame at 720p and 0.593 at 1080p**
-  with the VFD on (3.5 % of a 60 fps frame), against 0.015 and 0.013 ms for the
-  meters. It barely moves with the raster, so it's the audio analysis, not the
+- **Cost**, `ndtest --bench` on the v0.2.0 tree: **0.589 ms a frame at 720p and
+  0.601 at 1080p** with the VFD on (3.5 to 3.6 % of a 60 fps frame), against
+  0.011 and 0.014 ms for the meters (0.583, 0.593, 0.015 and 0.013 on 2026-11-16). It barely moves with the raster, so it's the audio analysis, not the
   shader: the figure includes earshot's update and the harness feeding it.
+- **Flashing** (2026-11-19). `ndtest --pipe` rendered 15 s clips at 1280×720 and
+  60 fps, with the demo clips' audio fed through `--pcm`: 30 clips for each
+  ballistic setting, 8 for each camera setting, then one clip for each further
+  pair of shutter speed and scan rate. A flash checker counted transitions in linear
+  luminance (a change of a tenth of white, with the darker end below 0.8, over
+  the whole frame and in each third-of-frame window). Results:
+  - At the defaults the worst window measured **1.0 flash a second**, and the
+    whole frame 0.
+  - With the fastest ballistics (Size 1, Sensitivity 1, Peak Hold 0.1, Hold
+    Decay 1, thirds or octaves), the worst window measured **2.0**.
+  - **With Shutter above 0 it crosses three a second.** The scan beats against
+    the frame rate, and a dark band rolls through part of the display. Worst
+    windows, at Size 1 and Sensitivity 1:
+    - 1/60 s at 50 Hz: 10.5 a second.
+    - 1/125 s at 50, 70 and 100 Hz: 10.5, 10.5 and 19.
+    - 1/250 s and 1/500 s at 100 Hz: 20; at 150 Hz: 30.
+    - At the default Size: 10 at 1/125 s and 50 Hz, and at 1/250 s and 100 Hz.
+    - 1/1000 s and shorter catch too little of the scan to count, and every
+      setting tried at 200 Hz stayed under 1.
+  - The whole frame never crossed three a second.
+  - The striped pattern of segment rows and wires peaked at **21.6 %** of the
+    frame and was never over a quarter of it for any second. A quarter of the
+    screen is where Ofcom's and ITU-R BT.1702's pattern guidance starts.
+  - The defaults stay as built. Hence the warning at the top.
+- **In Resolume Arena 7.29.0 on this Mac** (2026-11-19, over Arena's REST API):
+  - Type = VFD with Audio Input left on None (host FFT) was dark with its amber
+    lamp. That held while Resolume's `Beat 001.wav` played and Arena's log said
+    audio was reaching the layer, so the VFD did as designed and drew nothing
+    from Resolume's spectrum.
+  - The plugin listed 12 devices in the menu and opened none, so no microphone
+    prompt came. Status Lamp Off removed the lamp. 10 Octaves stayed dark.
+  - Back on the VU, the frame matched the one from before the switch, code value
+    for code value.
 
-What isn't verified for the VFD: it has never been in Resolume or any host with
-a real audio device; earshot has never been compiled for Windows; the macOS
-microphone prompt hasn't been seen; and whether Resolume refreshes the device
-menu after **Rescan Inputs** is unknown.
+What isn't verified for the VFD:
+
+- It has been in Resolume only with no device chosen. It has never run in a host
+  with a real audio device.
+- So the macOS microphone prompt hasn't been seen.
+- Whether Resolume refreshes the device menu after **Rescan Inputs** is unknown.
+- earshot compiles for Windows but has never run there.
 
 What isn't verified yet:
 
-- **Never loaded into Resolume on macOS**, and not installed into it there.
-  Everything above is the offline harness driving the real plugin class in a
-  headless GL context.
-  How the 31 controls across four groups look in Resolume's inspector is
-  untested, and so is hiding the ones the current Type and Standard can't
-  reach (`--visible` checks the plugin's half; vectrix measured Arena honouring
-  it, but needle hasn't).
+- **Resolume on macOS: one session, over REST.** Everything before this list is
+  the offline harness, which drives the real plugin class in a headless GL
+  context. On 2026-11-19 the v0.2.0 bundle ran in Resolume Arena 7.29.0 on this
+  Mac, driven through Arena's REST API.
+  - It loaded from Extra Effects and mounted as `SW Needle`.
+  - Arena honours the hiding. It lists 31 of the 43 parameters on a VU with
+    Standard on, and 26 on the VFD. There the six VFD controls and Peak Hold and
+    Hold Decay appear, and the needle's face and glass controls go.
+  - A VU in silence is still: two snapshots read identical. Mix 0 is
+    transparent.
+  - Resolume's own `Beat 001.wav` played on the layer below, with the Audio
+    buffer on Composition. **All four meters moved, but low.** At the default
+    Reference Level and Sensitivity the VU rose only to about −20 VU and the PPM
+    stayed on its stop. At Sensitivity 1 the VU reached about −15 and the PPM
+    about mark 2. That is the nominal calibration described above; Reference
+    Level and Sensitivity are the remedy.
+  - How the controls look in Arena's inspector hasn't been looked at.
 - **Three of the quoted figures came from background knowledge and were not
   checked against a document**: the PPM's "2 dB below steady for a 5 ms burst"
   (used instead of the looser "about 80 %"; they're the same requirement,
@@ -319,10 +381,13 @@ What isn't verified yet:
   Audio input) were skipped, because win-lab has no sound device. So Windows
   hasn't heard real audio either, and the gate says nothing about speed or a real
   GPU.
-- **The only real audio it has had in a host** was on a user's Resolume rig
-  running v0.1.1 ([#1](https://github.com/stoatworks-labs/needle/issues/1)), which
-  is how the 18 dB error was found. Nothing in v0.1.2 has been run in Resolume with
-  audio, and the universal build has never run on an Intel Mac.
+- **Real audio in a host**, only twice:
+  - A user's Resolume rig running v0.1.1
+    ([#1](https://github.com/stoatworks-labs/needle/issues/1)), which is how the
+    18 dB error was found.
+  - Resolume's demo loop in Arena 7.29.0 on this Mac (above).
+
+  The universal build has never run on an Intel Mac.
 - **The host's audio buffer is uncalibrated and its bin law is unmeasured** (see
   above). `Bin Law` exists because the fleet disagrees with itself about it.
 - **Text is pixel-exact only at Rotation 0.** Rotate the instrument and the
