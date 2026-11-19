@@ -9,6 +9,7 @@ README: `.assetsignore` keeps this file, `tools/` and `wasm/` out of the upload.
     needle-core.js    the plugin's C++ and earshot's, compiled by emscripten -- BUILT, committed
     needle-core.wasm
     wasm/             the build's C++ inputs (glue.cpp, gl_shim.cpp) and inputs.sha256
+    needle.css        the page's own styles: the photosensitivity warning and the VFD's caution line
     vendor/           the shared kit, copied in from stoatworks-backend — DO NOT EDIT
     tools/            check_shaders.py (run by tools/verify.sh), build-wasm.sh, crosscheck.py
     _headers          CSP and caching, honoured by the Cloudflare assets runtime
@@ -110,6 +111,17 @@ are `Controls.h`'s conversions, compiled in (`nd_convert`).
 computed in its shader from the scan rate, the exposure and the fixed 16 ms
 readout; the page adds nothing. At Shutter 0 (the eye) the scan is invisible by
 design.
+
+**Photosensitivity.** With Shutter above 0 the scan beats against the frame
+rate and a dark band rolls through the display: the release's flash check of the
+plugin's own output (ndtest, 1280×720, 60 fps, on music) measured 10–30
+flashes a second in a third of the frame from 1/60 s to 1/500 s, depending on
+Multiplex Rate, and 1 or under at 1/1000 s and 1/8000 s; Shutter 0, the default, stayed
+at 2 a second or under. No default is changed. The page warns at the top
+(`index.html`, `needle.css`), repeats it in a caution line under the picture
+whenever the VFD is shown and in Shutter's hint, and opens a link on the VFD
+with Shutter above 0 paused. In embed mode (`?embed=1`) neither the warning nor
+that rule applies: there is no reader and no Play button.
 
 **What can differ from the Mac:** WebAssembly has no fused multiply-add and
 uses musl's libm, so earshot's filters can differ in the last digits; GL is

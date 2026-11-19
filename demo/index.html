@@ -7,6 +7,7 @@
     <meta name="description" content="Try the Needle FFGL source for Resolume in your browser: a VU, a BBC PPM, an LM3915 LED bargraph and a magic eye with standards-derived ballistics, and a 1980s hi-fi VFD spectrum display. The meters are the plugin's own shader over a port of its meter engine; the VFD is the plugin's own C++ compiled to WebAssembly. Both are driven by generated test signals — there is no audio or microphone in the page." />
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./vendor/kit.css" />
+    <link rel="stylesheet" href="./needle.css" />
     <link rel="canonical" href="https://needle-demo.stoatworks-labs.com/" />
     <meta name="project-page" content="https://stoatworks-labs.com/software/needle/" />
     <meta property="og:type" content="website" />
@@ -21,6 +22,31 @@
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
+    <section class="nd-warning" id="photosensitivity" aria-labelledby="nd-warning-title">
+      <h2 class="nd-warning__title" id="nd-warning-title">Photosensitivity warning</h2>
+      <p>
+        <strong>With Shutter above 0, the VFD flashes.</strong> Shutter (Type = VFD only) models a
+        camera, and the VFD's multiplexed scan beats against the frame rate, so a dark band rolls
+        through the display: measured at up to 30 flashes a second in part of the frame. That is
+        far over the three a second that broadcast flash guidance (Ofcom, ITU-R BT.1702) allows.
+        Flashing light can trigger seizures in people with photosensitive epilepsy. Leave Shutter
+        at 0 if flashing could affect you or anyone who can see your screen.
+      </p>
+      <p>
+        Measured from the plugin's own output (its test harness at 1280&times;720 and 60 fps, 15 s
+        a run, on music from Resolume's demo clips), over the whole frame and in each third of it.
+        With Shutter at 0, the default, the VFD's worst second had 1 flash at the default settings
+        and 2 at its fastest ballistics. With Shutter above 0 it went over the line in a third of
+        the frame (never over the whole frame): 10 to 30 a second from 1/60 s to 1/500 s,
+        depending on Multiplex Rate, and 1 or under at 1/1000 s and 1/8000 s.
+      </p>
+      <p>
+        The page opens at Shutter 0. A link that opens on the VFD with Shutter above 0 opens
+        paused, and a caution line under the picture repeats this whenever the VFD is shown.
+        <strong>Pause</strong>, under the picture, stops it at once.
+      </p>
+    </section>
+
     <main id="demo">
       <noscript>
         <h1>Needle</h1>

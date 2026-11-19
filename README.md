@@ -412,7 +412,10 @@ audio device, so Audio Input and Rescan Inputs aren't on its panel. The shader
 copies, the harness's signal and the WebAssembly's inputs are checked by
 `demo/tools/check_shaders.py`, run by `tools/verify.sh`, and the VFD's pictures
 match the test harness's to within one code in a few dozen pixel values
-(`demo/tools/crosscheck.py`). See
+(`demo/tools/crosscheck.py`). The page carries a photosensitivity warning: with
+Shutter above 0 the VFD's scan rolls a dark band through the display at up to 30
+flashes a second in part of the frame; at Shutter 0, the default, it stays at 2
+a second or under. See
 `demo/README.md`.
 
 ## Installing

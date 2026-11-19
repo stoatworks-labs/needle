@@ -27,6 +27,10 @@ Part 1, the page (always):
   - every VFD signal runs, "Silence" turns the lamp red after 3 s and
     "Nothing fed" leaves the display dark with the lamp amber;
   - back to the VU after the VFD, the meter still draws;
+  - the photosensitivity warning is at the top; the caution line shows under
+    the picture with the VFD only, and says Shutter is above 0 when it is; a
+    link opening on the VFD with Shutter above 0 opens paused, one at Shutter
+    0 plays, and in embed mode neither the warning nor that rule applies;
   - nothing logged an error or a warning, the panel check included (vfd.js
     compares the hand-written panel with the compiled declarations and logs
     each difference as an error), and no device API was called.
@@ -330,7 +334,11 @@ def page_checks(page, base, keep):
     check(distinct, "the four meters are four different pictures")
     status = page.run("document.querySelector('.stage__readout')?.textContent || ''")
     check(status.startswith("This frame’s spectrum"), "the meters' line under the picture", status[:90])
-    shown = page.run("[...document.querySelectorAll('[data-half]')].map((f) => `${f.dataset.half}:${f.getBoundingClientRect().width > 0}`).join(' ')")
+    warning = page.run("(() => { const w = document.querySelector('#photosensitivity'); return w && w.getBoundingClientRect().height > 0 ? w.textContent.replace(/\\s+/g, ' ').trim() : ''; })()")
+    check("30 flashes a second" in warning and "Shutter at 0" in warning, "the photosensitivity warning is at the top", warning[:70])
+    caution = page.run("(() => { const c = document.querySelector('#vfd-caution'); return c ? c.getBoundingClientRect().height : -1; })()")
+    check(caution == 0, "no VFD caution line under the meters", f"height {caution}")
+    shown = page.run("[...document.querySelectorAll('.transport [data-half]')].map((f) => `${f.dataset.half}:${f.getBoundingClientRect().width > 0}`).join(' ')")
     check(shown == "meters:true vfd:false", "the meters' test signal menu is on screen, the VFD's is not", shown)
 
     # The VFD, playing.
@@ -349,10 +357,13 @@ def page_checks(page, base, keep):
     # nothing to list anyway): the menu holds no device, and nothing is selected.
     check(s and s["devices"] == 0 and s["calls"]["lists"] <= 1 and s["calls"]["selects"] == 0,
           "no device listed or selected", s and json.dumps(s["calls"]) + f", {s['devices']} devices in the menu")
-    shown = page.run("[...document.querySelectorAll('[data-half]')].map((f) => `${f.dataset.half}:${f.getBoundingClientRect().width > 0}`).join(' ')")
+    shown = page.run("[...document.querySelectorAll('.transport [data-half]')].map((f) => `${f.dataset.half}:${f.getBoundingClientRect().width > 0}`).join(' ')")
     check(shown == "meters:false vfd:true", "the VFD signal menu replaces the meters' test signal on screen", shown)
     note = page.run("document.querySelector('.transport + .stage__status')?.textContent || ''")
     check("no microphone" in note, "the note under the picture says there is no microphone", note[:80])
+    CAUTION = "(() => { const c = document.querySelector('#vfd-caution'); return c && c.getBoundingClientRect().height > 0 ? c.textContent : ''; })()"
+    caution = page.run(CAUTION)
+    check(caution.startswith("Photosensitivity: with Shutter above 0"), "the VFD's caution line is under the picture", caution[:70])
 
     # A VFD control changes the picture (paused, so only the control differs).
     page.pause()
@@ -366,6 +377,8 @@ def page_checks(page, base, keep):
     page.set({"bands": 0})
     eye = page.canvas()
     page.set({"multiplex": MULTIPLEX_300, "shutter": SHUTTER_1000})
+    caution = page.run(CAUTION)
+    check(caution.startswith("Photosensitivity warning: Shutter is above 0"), "with Shutter above 0 the caution says so", caution[:70])
     banded = page.canvas()
     d = np.abs(banded - eye)[..., :3]
     check(d.max() > 64, "Shutter 1/1000 s adds the scan's bands", f"max {d.max()} codes, {int((d > 0).sum())} values")
@@ -399,6 +412,18 @@ def page_checks(page, base, keep):
     check(int((vu[..., 3] > 0).sum()) > 10000, "back on the VU after the VFD, the meter draws")
     status = page.run("document.querySelector('.stage__readout')?.textContent || ''")
     check(status.startswith("This frame’s spectrum"), "and the line under the picture is the meters' again", status[:60])
+
+    # A link that opens on the VFD with Shutter above 0 opens paused; at 0 it plays.
+    page.load(f"{base}?type=4&shutter=0.5")
+    playing = page.run("window.needleDemo.mounted.state.playing")
+    label = page.run("document.querySelector('.btn--play').textContent")
+    check(playing is False and label == "Play", "a link opening on the VFD with Shutter above 0 opens paused", f"playing {playing}, button {label}")
+    page.load(f"{base}?type=4")
+    check(page.run("window.needleDemo.mounted.state.playing") is True, "a link opening on the VFD at Shutter 0 plays")
+    page.load(f"{base}?type=4&shutter=0.5&embed=1")
+    check(page.run("window.needleDemo.mounted.state.playing") is True
+          and page.run("document.querySelector('#photosensitivity').getBoundingClientRect().height") == 0,
+          "in embed mode neither the warning nor the paused rule applies")
 
     calls = page.run("window.__deviceCalls")
     check(calls == [], "no getUserMedia, enumerateDevices or getDisplayMedia call", json.dumps(calls))

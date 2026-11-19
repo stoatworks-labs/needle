@@ -180,6 +180,9 @@ mappings or a tolerance in the harness.
   is ever listed or opened (`NEEDLE_NO_DEVICES=1`, no capture backend), and Audio Input and
   Rescan Inputs are not on the panel. `demo/tools/crosscheck.py --ndtest build/ndtest`
   checks the page in Chrome and the VFD's bytes against ndtest.
+- **Photosensitivity:** Shutter above 0 makes the VFD flash (up to 30/s in a third of the
+  frame). The page warns at the top, under the picture and in Shutter's hint, and a link
+  opening on the VFD with Shutter above 0 opens paused. Warn, never change a default.
 - `demo/vendor/` is the shared kit — never edit it; fix it in
   `stoatworks-backend/resolume-demo/kit/` and re-run its `sync.sh needle`.
 

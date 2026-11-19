@@ -102,6 +102,15 @@
  * ProcessOpenGL advances its meter engine on every frame whatever Type says,
  * and the picture comes from the WebAssembly instead. The VFD's audio is its
  * own: generated test signals fed to earshot's feed(), never a microphone.
+ *
+ * **Photosensitivity.** With Shutter above 0 the VFD's scan beats against the
+ * frame rate and a dark band rolls through the display: the release's flash
+ * check of the plugin's own output measured up to 30 flashes a second in a
+ * third of the frame (Shutter 0, the default, 2 a second or under). No default
+ * is changed. index.html warns at the top; a caution line under the picture
+ * says it whenever the VFD is shown; Shutter's hint says it; and a link that
+ * opens on the VFD with Shutter above 0 opens paused (woofer's rule), except in
+ * embed mode, where there is no Play button.
  */
 
 import { mountDemo } from './vendor/demo.js';
@@ -1622,7 +1631,7 @@ function createRenderer(gl) {
             console.error(error);
           }
         }
-        vfdReadout(vfdFailed);
+        vfdReadout(vfdFailed, flashRegion(params));
         return;
       }
 
@@ -1660,6 +1669,11 @@ const pageQuery = new URLSearchParams(window.location.search);
 const vfdSignal = {
   id: VFD_SIGNALS.some((s) => s.id === pageQuery.get('vfdsignal')) ? pageQuery.get('vfdsignal') : VFD_SIGNALS[0].id,
 };
+
+/** Where the release's flash check found flashing: the VFD with Shutter above 0. */
+function flashRegion(params) {
+  return toOption(params.get('type'), kTypeCount) === kTypeVfd && params.get('shutter') > 0;
+}
 
 /** A VFD control's read-out: Controls.h's conversion, compiled in. */
 function vfdUnits(name, v, format) {
@@ -1760,7 +1774,7 @@ const PARAMS = [
   }),
   std('shutter', 'Shutter', 0.0, 'VFD', {
     display: (v) => vfdUnits('Shutter', v, (s) => (s <= 0 ? 'eye' : `1/${Math.round(1 / s)} s`)),
-    hint: 'VFD only. 0 is the eye. Above it, a rolling-shutter camera with a 16 ms readout, 1/24 s to 1/8000 s: each row of the picture catches its own slice of the scan, so a short exposure shows dark bands across the bars that move with Multiplex Rate. Those bands are the plugin’s own camera model, computed in its shader, not added by this page.',
+    hint: 'VFD only. 0 is the eye. Above it, a rolling-shutter camera with a 16 ms readout, 1/24 s to 1/8000 s: each row of the picture catches its own slice of the scan, so a short exposure shows dark bands across the bars that move with Multiplex Rate. Those bands are the plugin’s own camera model, computed in its shader, not added by this page. Photosensitivity: above 0 the scan beats against the frame rate and a dark band rolls through the display, measured at up to 30 flashes a second in part of the frame, far over the three a second broadcast guidance allows. Leave it at 0 if flashing could affect you or your audience.',
   }),
   opt('statusLamp', 'Status Lamp', ['Off', 'On'], 1, 'VFD',
     'VFD only. A lamp on the glass. Green: a device delivers — here earshot’s feed(), the path the test signal takes. Steady red: the input is open and bit-exactly silent (the Silence signal, after 3 s). Amber: no device, and the display dark. Blinking red, a device missing or refused, cannot happen on this page, which never chooses one.'),
@@ -1769,6 +1783,7 @@ const PARAMS = [
 let readoutNode = null;
 let readoutAt = 0;
 let noteNode = null;
+let cautionNode = null;
 let renderer = null;
 /** Which half drew the last frame: 'meters' or 'vfd', for the lines under the picture. */
 let showing = null;
@@ -1790,8 +1805,22 @@ function switchHalf(half) {
 
 const hz = (f) => (f >= 1000 ? `${(f / 1000).toFixed(f >= 10000 ? 0 : 1)} kHz` : `${f.toFixed(f < 100 ? 1 : 0)} Hz`);
 
-function vfdReadout(failed) {
+/**
+ * The caution line under the picture while the VFD is shown: the page's, not
+ * the plugin's (woofer's). Defaults are unchanged; the flash figures are the
+ * release's measurement of the plugin's own output (index.html's warning).
+ */
+const CAUTION_EYE =
+  'Photosensitivity: with Shutter above 0 the VFD’s scan beats against the frame rate and a dark band rolls through the display, measured at up to 30 flashes a second in part of the frame — far over the three a second that broadcast flash guidance (Ofcom, ITU-R BT.1702) allows. At Shutter 0, as now, it stayed at 2 a second or under. Leave Shutter at 0 if flashing could affect you or anyone who can see your screen.';
+const CAUTION_CAMERA =
+  'Photosensitivity warning: Shutter is above 0, so the VFD’s scan beats against the frame rate and a dark band rolls through the display, measured at up to 30 flashes a second in part of the frame — far over the three a second that broadcast flash guidance (Ofcom, ITU-R BT.1702) allows. Pause stops it at once; Shutter 0, the default, stays at 2 a second or under.';
+
+function vfdReadout(failed, camera) {
   switchHalf('vfd');
+  if (cautionNode) {
+    const text = camera ? CAUTION_CAMERA : CAUTION_EYE;
+    if (cautionNode.textContent !== text) cautionNode.textContent = text;
+  }
   if (!readoutNode) return;
   const now = performance.now();
   if (now - readoutAt < 150) return;
@@ -1874,6 +1903,7 @@ const mounted = mountDemo({
     // -- both ------------------------------------------------------------------
     'Three of the plugin’s controls and its About block are absent from the panel: the Audio buffer, which a host writes and no operator sets (the meters’ test signal stands in for it), and the VFD’s Audio Input and Rescan Inputs (above). The About block’s text line and four link buttons exist so a host has somewhere to put links a web page already has. The other 35 parameters are all here, in the plugin’s order. At start-up the page reads the compiled plugin’s own declarations and logs an error to the console for any name, group, type, element list or default on this panel that differs from them.',
     'Resolume shows only the controls the current Type reads (the plugin’s ApplyVisibility): on the VFD it hides Count, Bin Law, the ballistics but Peak Hold and Hold Decay, and every Look control; on a meter it hides the VFD group. The kit’s panel cannot hide a control, so all 35 are always here, and each hint says which Types read it.',
+    'The photosensitivity warning at the top, the caution line under the picture while the VFD is shown, and the rule that a link opening on the VFD with Shutter above 0 opens paused are the page’s, not the plugin’s; in embed mode (?embed=1, the output as a video source, with no Play button to press) neither the warning nor that rule applies. No default was changed for them. The flash figures are the release’s measurement of the plugin’s own output in its test harness, not of this page.',
     'There is no clip and no "use my own file". Needle is a source with zero inputs; the kit offers both controls to every demo and this page removes them rather than leaving them present and inert.',
     'Nothing here is measured. The 300 ms to 99 %, the 1.25 % overshoot, the 20 dB in 2.8 s, the 3 dB ladder, the eye shutting at the overload, frame-one priming and frame-rate independence are all checked by ndtest in the repository, with no GL context at all, and the VFD’s bands, segments, dots, lamp and scan by its VFD checks on the same compiled C++. That harness, not this page, is the reason to believe the instruments.',
     'The plugin has never been loaded into Resolume on macOS and no real audio has reached it in a host. On Windows it passed the fleet’s Arena gate in Arena 7.27.1 on llvmpipe, with the audio-driven controls skipped for want of a sound device. This page is a browser and is evidence about neither, nor about what a live audio device would deliver to the VFD.',
@@ -1902,7 +1932,14 @@ if (transportBar && mounted) {
   noteNode.textContent = METER_NOTE;
   readoutNode = document.createElement('p');
   readoutNode.className = 'stage__status stage__readout';
-  transportBar.after(noteNode, readoutNode);
+  cautionNode = document.createElement('p');
+  cautionNode.className = 'stage__status nd-caution';
+  cautionNode.id = 'vfd-caution';
+  cautionNode.setAttribute('aria-live', 'polite');
+  cautionNode.dataset.half = 'vfd';
+  cautionNode.style.display = 'none';
+  cautionNode.textContent = CAUTION_EYE;
+  transportBar.after(noteNode, cautionNode, readoutNode);
 
   // The kit's "Test signal" is the meters'. The VFD has its own, beside it:
   // each shown only while its half is drawn.
@@ -1958,6 +1995,16 @@ if (transportBar && mounted) {
 
 if (mounted) {
   const params = mounted.params;
+
+  // A link that opens on the VFD with Shutter above 0 opens paused (woofer's
+  // rule for its Height view): that is where the release measured flashing.
+  // Not in embed mode, which has no Play button to press. No default changes.
+  const embed = pageQuery.has('embed') && pageQuery.get('embed') !== '0';
+  if (!embed && flashRegion(params)) {
+    mounted.state.playing = false;
+    const play = document.querySelector('.btn--play');
+    if (play) play.textContent = 'Play';
+  }
 
   // Copy link carries the VFD's signal.
   const toQuery = params.toQuery.bind(params);

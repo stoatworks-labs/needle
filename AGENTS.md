@@ -975,10 +975,20 @@ Decisions:
   Resolume (its earshot skips the gap).
 - **Shutter and Multiplex Rate** are the plugin's own camera model, drawn by its
   shader; the page adds nothing and says so.
-- **No photosensitivity note** on the page at v0.2.0. If the VFD is found to
-  cross 3 flashes a second (its bars, peak dots or, under Shutter, the
-  multiplex), add a short note shown with the VFD — warn, never change a
-  default.
+- **Photosensitivity: warned, no default changed.** The release's flash check
+  (rubens' flashcheck.py on `ndtest --pipe` at 1280×720, 60 fps, 15 s runs on
+  Resolume's demo-clip audio, whole frame and 5×5 third-of-frame windows):
+  Shutter 0 worst 1.0/s at the defaults and 2.0/s at the fastest ballistics;
+  Shutter above 0 crosses 3/s in third-of-frame windows only (never the whole
+  frame), 10–30/s from 1/60 s to 1/500 s depending on Multiplex Rate, 1/s or
+  under at 1/1000 s and 1/8000 s — the scan beating against the frame rate, a dark band
+  rolling through the display. So the page has a warning at the top
+  (index.html, styled by `demo/needle.css`, hidden in embed mode), a caution
+  line under the picture whenever the VFD is shown (it says so outright when
+  Shutter is above 0), the warning in Shutter's hint, and woofer's rule: a link
+  that opens on the VFD with Shutter above 0 opens paused (not in embed mode).
+  The page's own test signals were not flash-checked; the figures are the
+  plugin's output on music.
 
 `demo/tools/crosscheck.py` (not in verify: it needs Chrome and a GPU) serves
 `demo/` with `_headers` applied, traps every device API, and checks the page:

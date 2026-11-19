@@ -1,0 +1,42 @@
+/*
+ * Needle's own additions to the kit's page: the photosensitivity warning at
+ * the top and the caution line under the picture while the VFD is shown.
+ * Everything else is vendor/kit.css, unedited. (woofer's note, laid out as
+ * theirs.)
+ */
+
+.nd-warning {
+  /* #demo is 1400px wide with a 20px gutter: line up with what is inside it. */
+  max-width: 1360px;
+  margin: 24px auto 0;
+  padding: 14px 18px;
+  background: #1f1a0c;
+  border: 1px solid #5a4613;
+  border-left: 4px solid var(--warn);
+  border-radius: 8px;
+  color: #f3e9cf;
+}
+
+@media (max-width: 1400px) {
+  .nd-warning { margin-left: 20px; margin-right: 20px; }
+}
+@media (max-width: 480px) {
+  .nd-warning { margin-left: 16px; margin-right: 16px; padding: 12px 14px; }
+}
+
+.nd-warning__title {
+  font-size: 17px;
+  color: var(--warn);
+  margin: 0 0 4px;
+}
+
+.nd-warning p { margin: 8px 0 0; max-width: 80ch; font-size: 14px; }
+
+/* body has embed set when ?embed=1: the note is the page's, not the picture's. */
+body[data-embed] .nd-warning { display: none; }
+
+.nd-caution {
+  border-color: #5a4613;
+  background: #1f1a0c;
+  color: #f3e9cf;
+}
