@@ -33,10 +33,11 @@ than captured from Resolume.*
 > real audio it had in a host was on a user's Resolume rig running v0.1.1 (needle#1). Resolume hands a
 > plugin a 64-bin spectrum, and nobody has measured whether those bins are magnitudes or powers, or
 > what level a full-scale tone produces, so the calibration is nominal, and **Bin Law** is there
-> so you can flip the one assumption that would otherwise be buried. On Windows, a build of v0.1.0
+> so you can flip the one assumption that would otherwise be buried. On Windows, the v0.2.0 release
 > loads, registers as a source and draws its meters in Resolume Arena 7.27.1, with every control
-> matching what the plugin declares. That was on software rendering, on a machine with no sound
-> device, so the audio path hasn't been heard there either. Try it on a spare layer before you
+> Arena lists matching what the plugin declares. That was on software rendering, on a machine
+> with no sound device, so the audio path hasn't been heard there either, and the VFD wasn't
+> tried. Try it on a spare layer before you
 > put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -433,7 +434,7 @@ Nothing has been timed on Windows or inside Resolume.
 - **The VFD has never been fed a real device in a host.** The macOS microphone prompt hasn't been
   seen, and whether Resolume refreshes the **Audio Input** menu after **Rescan Inputs** is
   unknown; if a new device doesn't appear, put needle in a fresh clip. On Windows the VFD builds
-  but has never run.
+  and the plugin loads in Arena 7.27.1, but the VFD itself has never run.
 - **The VFD flashes with Shutter above 0**: see [Shutter and flashing](#shutter-and-flashing).
 - Text is pixel-exact only at Rotation 0. No factory presets and no OpenFX port.
 - **There's a browser demo** at [needle-demo.stoatworks-labs.com](https://needle-demo.stoatworks-labs.com).

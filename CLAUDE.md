@@ -143,7 +143,7 @@ mappings or a tolerance in the harness.
   It loads, Arena honours the hiding (31 params listed on a VU, 26 on the VFD),
   and the meters move to `Beat 001.wav`, but low at the defaults (the VU near
   -20, the PPM on its stop). The inspector itself hasn't been looked at.
-- Windows in Resolume Arena: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device.
+- Windows in Resolume Arena: the v0.2.0 release zip's DLL passed the fleet's Arena gate 9 of 9 on 2026-11-19 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, the 31 params listed at the defaults as declared, renders, 21 controls move the picture; the 5 audio-driven controls were skipped because the box has no sound device. The gate never selects Type = VFD (it sweeps a choice's first three options).
 - Real audio in a host: the needle#1 rig (v0.1.1) and Arena's demo loop on this Mac
   (above). Resolume's 64-bin FFT mapping is
   assumed (`Bin Law`), not measured. The RMS footing (needle#1) is a better guess, not a number.

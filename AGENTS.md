@@ -40,7 +40,7 @@ for): about 20 s locally. The VFD's picture checks stay in `verify.sh`, since
 on the runner's software renderer they cost minutes apiece.
 
 **Resolume on macOS: one session, 2026-11-19, v0.2.0, Arena 7.29.0, over REST**
-(what it showed is in the v0.2.0 paragraph below). On Windows: a CI build passed the fleet's Arena gate 9 of 9 on 2026-09-23 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, all 37 host parameters as declared, renders, 21 controls move the picture; the 11 audio-driven controls were skipped because the box has no sound device. No real audio has reached
+(what it showed is in the v0.2.0 paragraph below). On Windows: the v0.2.0 release zip's own DLL passed the fleet's Arena gate 9 of 9 on 2026-11-19 (Arena 7.27.1, win-lab, llvmpipe): loads, registers as `SW Needle` / `ND01` / source, the 31 params listed at the defaults as declared (Arena lists only the shown ones; plugin-bench's `needle.json` is cut to those 31), renders, 21 controls move the picture; the 5 audio-driven controls were skipped because the box has no sound device. The gate sweeps only the first three options of a choice, so it never selects Type = VFD. (v0.1.0's CI build passed the same gate on 2026-09-23 with 37 params, before v0.1.2 began hiding.) No real audio has reached
 it in a host except on the needle#1 rig (v0.1.1, below), so Resolume's 64-bin FFT mapping is still assumed (`Bin Law`).
 The universal build has never run on an Intel Mac, and every render-cost figure
 is Apple Silicon only. There are no factory presets and no OpenFX port.

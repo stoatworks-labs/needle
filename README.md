@@ -369,16 +369,18 @@ What isn't verified yet:
   the 6U5's 100-degree shadow angle. `AGENTS.md` separates those from the
   figures that were supplied, and each names the single constant to change if it
   turns out to be wrong. Only the first can affect a ballistic claim.
-- **Windows in Resolume Arena:** a CI build of the v0.1.0 source went through the
-  fleet's Arena gate on 2026-09-23 (Resolume Arena 7.27.1 on win-lab, Mesa
+- **Windows in Resolume Arena:** the v0.2.0 release zip's own DLL went through
+  the fleet's Arena gate on 2026-11-19 (Resolume Arena 7.27.1 on win-lab, Mesa
   llvmpipe, no GPU) and passed 9 of 9, with one SKIP it owned up to. It loads from
   Extra Effects, registers as `SW Needle` / `ND01` / **source**, is listed among
-  Arena's sources, all 37 host parameters match the declaration in name, order,
-  type, range and default, it renders a meter, and Arena's log stays clean. 21
-  controls measurably moved the picture (4 of them under a precondition, such as
-  Background on for the background colour); the 11 that act on audio (Reference
-  Level, Sensitivity, Bin Law, Standard, the five ballistics, Persistence and the
-  Audio input) were skipped, because win-lab has no sound device. So Windows
+  Arena's sources, the 31 controls Arena lists at the defaults (a VU with Standard
+  on; the rest are hidden) match the declaration in name, order, type, range and
+  default, it renders a meter, and Arena's log stays clean. 21 controls measurably
+  moved the picture (4 of them under a precondition, such as Background on for the
+  background colour); the 5 that act on audio (Reference Level, Sensitivity, Bin
+  Law, Standard and the Audio input) were skipped, because win-lab has no sound
+  device. The gate tries only the first three Types, so the VFD has never run on
+  Windows; its Windows build is CI's MSVC compile and this gate's load. Windows
   hasn't heard real audio either, and the gate says nothing about speed or a real
   GPU.
 - **Real audio in a host**, only twice:
